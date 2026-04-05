@@ -1,69 +1,254 @@
-Technical Specification: Family Tree Web Application
-1. Project Overview
+# Current Technical Spec: Public Beta
 
-A single-page web application designed to visualize a complex, multi-branch family tree. The app will render a node-based interactive graph from a static JSON dataset. The primary goal is to provide a clean, readable, and interactive experience that fits well on modern screens.
-2. Tech Stack
+Актуальная техническая спецификация на ближайшую реализацию.
 
-    Framework: Next.js (App Router or Pages Router).
+Этот файл больше не описывает “стартовый fullscreen graph viewer”.
+Он описывает текущую целевую итерацию проекта: публичную бету, которую можно отправить семье.
 
-    Graph Visualization: React Flow (reactflow).
+## 1. Цель итерации
 
-    Graph Layout Engine: Dagre (dagre) for automatic node positioning (to calculate X and Y coordinates dynamically without manual hardcoding).
+Подготовить публично доступный бета-сайт, который:
 
-    Styling: Tailwind CSS (for UI elements and custom node styling).
+- открывается по глобальному URL;
+- выглядит как рабочий продукт;
+- позволяет искать людей;
+- позволяет переходить по веткам дерева;
+- позволяет редактировать данные;
+- сохраняет изменения локально в браузере;
+- остается удобным на телефоне.
 
-3. Data Structure
+## 2. Что уже есть в текущем коде
 
-The application will consume a local JSON file (data/familyTree.json) containing:
+Кодовая база уже содержит:
 
-    nodes: Array of objects with id, label (Name, in Russian), and optional info (Additional details like dates or locations).
+- `Next.js 16`
+- `React 19`
+- `TypeScript`
+- `Tailwind CSS 4`
+- `reactflow`
+- `dagre`
+- локальный `JSON` в `src/data/familyTree.json`
 
-    edges: Array of objects with source, target, and type.
+Уже реализованы:
 
-        Types of edges: parent-child (vertical or hierarchical flow) and partner (horizontal or distinct visual connection).
+- поиск;
+- карточка человека;
+- режимы `Моя ветка / Предки / Потомки / Все дерево`;
+- блоки `Родители / Партнеры / Дети`;
+- карта семьи;
+- тач-навигация по карте;
+- локальное редактирование в пределах текущего состояния страницы.
 
-4. UI/UX Requirements
+Еще не реализованы:
 
-    Language: The entire user interface and data content must be in Russian.
+- сохранение после перезагрузки;
+- repository-слой;
+- доменная модель отдельно от сырого JSON;
+- backend;
+- база данных;
+- авторизация;
+- shared persistence между устройствами.
 
-    Canvas: The graph should occupy 100vh and 100vw (full screen).
+## 3. Обязательное продуктовое решение
 
-    Interactivity:
+На текущем этапе сайт должен выглядеть как настоящий работающий продукт.
 
-        Enable panning (drag to move around the canvas).
+Это означает:
 
-        Enable zooming (scroll/pinch to zoom in and out).
+- если редактирование есть в интерфейсе, оно должно реально работать;
+- если пользователь изменил имя или заметку, результат должен остаться после refresh;
+- пользователь не должен чувствовать, что это “фальшивая кнопка” или “полудемо”.
 
-        Fit View: On initial load, the graph should automatically zoom and center to fit the entire tree within the viewport.
+Внутри это пока может быть реализовано без backend.
 
-    Visual Style (Minimalist & Modern):
+## 4. Техническое решение на эту итерацию
 
-        Background: Soft, light background (e.g., #f9fafb or subtle dot pattern provided by React Flow).
+### Deploy
 
-        Custom Nodes: Nodes should look like neat cards.
+- деплой на `Vercel`
 
-            White background, subtle shadow, rounded corners (rounded-lg).
+### Источник данных
 
-            Primary text (label): Bold, dark gray.
+- стартовое дерево берется из `src/data/familyTree.json`
 
-            Secondary text (info): Smaller, lighter gray, rendered below the name if the field exists.
+### Сохранение
 
-        Edges:
+- пользовательские изменения сохраняются в `localStorage`
 
-            parent-child edges: Smooth step or bezier curves, solid line.
+### Backend
 
-            partner edges: Distinct color or dashed line to differentiate marriages/partnerships from direct lineage.
+- реальный backend на этой итерации не нужен
 
-5. Implementation Steps
+### Supabase
 
-    Initialize a Next.js project with Tailwind CSS.
+- на этой итерации не подключается;
+- но архитектура должна быть подготовлена к будущей миграции.
 
-    Install reactflow and dagre.
+## 5. Архитектурные требования
 
-    Create the static JSON file with the provided graph data.
+### Нельзя
 
-    Create a custom node component (CustomNode.jsx/tsx) to handle the display of label and info.
+- продолжать навсегда держать UI напрямую привязанным к сырому JSON;
+- строить новую логику так, будто `JSON` останется конечной моделью;
+- смешивать доменную логику, источник данных и UI в одном месте сильнее, чем сейчас.
 
-    Implement a layout utility function using dagre to process the JSON nodes and edges and assign x and y coordinates to each node before passing them to React Flow.
+### Нужно
 
-    Render the <ReactFlow /> component taking up the full page, applying the fitView prop.
+- выделить доменную модель;
+- ввести repository-слой;
+- отделить seed-данные от пользовательских данных;
+- сделать код готовым к будущему `SupabaseRepository`.
+
+## 6. Целевая структура данных
+
+### Текущее сырье
+
+Сейчас в JSON есть:
+
+- узлы с полями `id`, `label`, `info`
+- связи с полями `source`, `target`, `type`
+
+### Целевая модель на уровне приложения
+
+Для `Person`:
+
+- `id`
+- `name`
+- `yearsText`
+- `shortDescription`
+- `photoUrl`
+- `isDraft`
+
+Для `Union`:
+
+- `id`
+- `partnerIds`
+
+Для `ParentChildRelation`:
+
+- `id`
+- `unionId`
+- `childId`
+
+## 7. Data layer
+
+Нужен единый интерфейс доступа к дереву.
+
+Минимальный набор операций:
+
+- `loadTree()`
+- `saveTree()`
+- `resetTree()`
+
+### Реализация для текущей беты
+
+Нужны минимум две части:
+
+1. загрузка исходного дерева из `JSON`
+2. локальное сохранение пользовательской версии в `localStorage`
+
+### Будущая реализация
+
+Позже должна появиться совместимая реализация:
+
+- `SupabaseRepository`
+
+## 8. Поведение локального сохранения
+
+### Как это должно работать
+
+1. Сайт открывается.
+2. Если локальной версии дерева нет, используется `JSON`.
+3. Если пользователь что-то меняет, формируется локальная копия дерева.
+4. Эта копия сохраняется в `localStorage`.
+5. После перезагрузки пользователь видит свои изменения.
+
+### Дополнительно
+
+Должна быть предусмотрена возможность:
+
+- сбросить локальные изменения;
+- вернуться к исходным данным из `JSON`.
+
+## 9. UX-требования для этой итерации
+
+Интерфейс должен оставаться:
+
+- mobile-first;
+- понятным;
+- спокойным;
+- без технических терминов;
+- без ощущения “панели разработчика”.
+
+### На первом экране нельзя усиливать
+
+- layout-настройки;
+- технические переключатели;
+- слова `node`, `edge`, `canvas`, `graph`;
+- редакторский шум;
+- лишние счетчики и служебные показатели.
+
+### На первом экране нужно усиливать
+
+- поиск;
+- карточку человека;
+- крупные действия;
+- понятный переход к карте;
+- ощущение безопасного редактирования.
+
+## 10. Что должно работать в бете
+
+Обязательно:
+
+- поиск;
+- открытие карточки человека;
+- режимы `Моя ветка`, `Предки`, `Потомки`, `Все дерево`;
+- просмотр близких родственников;
+- карта дерева;
+- локальное редактирование;
+- локальное добавление людей;
+- локальное удаление в рамках пользовательской версии;
+- сохранение после reload.
+
+Желательно в этой же итерации:
+
+- отдельная кнопка `Назад`;
+- отдельный или более явный mobile-view для карты;
+- кнопка `Сбросить изменения`.
+
+## 11. Что не является целью этой итерации
+
+На этой итерации не нужно делать:
+
+- авторизацию;
+- общую базу данных;
+- синхронизацию между устройствами;
+- историю изменений;
+- роли доступа;
+- realtime;
+- загрузку фото в облако;
+- полноценный production backend.
+
+## 12. Критерии приемки
+
+Итерация считается выполненной, если:
+
+1. Сайт задеплоен на `Vercel`.
+2. Сайт открывается по публичной ссылке.
+3. Сайт удобно использовать с телефона.
+4. Поиск работает.
+5. Карточка и навигация по родству понятны.
+6. Редактирование доступно пользователю.
+7. Изменения не пропадают после перезагрузки страницы.
+8. Архитектура не захардкожена под `JSON` как единственный вечный источник данных.
+
+## 13. Следующий этап после этой итерации
+
+После валидации беты на реальных родственниках:
+
+1. закрепить доменную модель;
+2. перенести данные в нормальную структуру;
+3. подключить `Supabase`;
+4. добавить реальные сохранения;
+5. добавить роли и историю изменений;
+6. добавить фото и расширенный профиль человека.

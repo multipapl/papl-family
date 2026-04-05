@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local implementation notes
+BETA_IMPLEMENTATION_SPEC.local.md
+PERSONAL_BETA_GUIDE.local.md
