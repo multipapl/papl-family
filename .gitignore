@@ -40,6 +40,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local implementation notes
-BETA_IMPLEMENTATION_SPEC.local.md
-PERSONAL_BETA_GUIDE.local.md
+# local implementation note BETA_IMPLEMENTATION_SPEC.local.md PERSONAL_BETA_GUIDE.local.md

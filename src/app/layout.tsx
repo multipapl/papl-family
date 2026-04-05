@@ -14,8 +14,8 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Family Canvas",
-  description: "Локальный прототип интерфейса для интерактивного родового дерева.",
+  title: "Family Archive",
+  description: "Семейное дерево с поиском, карточками людей и локальным сохранением изменений.",
 };
 
 export default function RootLayout({

@@ -1,36 +1,33 @@
-export type FamilyNodeRecord = {
-  id: string;
-  label: string;
-  info?: string;
-};
-
-export type RelationshipType = "parent-child" | "partner";
-
-export type FamilyLinkRecord = {
-  source: string;
-  target: string;
-  type: RelationshipType;
-};
+import type { Person, TreeSnapshot, Union } from "@/domain/familyTree";
 
 export type ViewMode = "overview" | "focus" | "ancestors" | "descendants";
 
-export type GraphSnapshot = {
-  nodeById: Map<string, FamilyNodeRecord>;
-  parentsById: Map<string, string[]>;
-  childrenById: Map<string, string[]>;
-  partnersById: Map<string, string[]>;
-  generationById: Map<string, number>;
-  descendantsCountById: Map<string, number>;
+export type TreeIndexes = {
+  childIdsByPersonId: Map<string, string[]>;
+  childIdsByUnionId: Map<string, string[]>;
+  descendantsCountByPersonId: Map<string, number>;
+  generationByPersonId: Map<string, number>;
+  parentIdsByPersonId: Map<string, string[]>;
+  parentUnionIdsByChildId: Map<string, string[]>;
+  partnerIdsByPersonId: Map<string, string[]>;
+  personById: Map<string, Person>;
+  unionById: Map<string, Union>;
+  unionIdsByPersonId: Map<string, string[]>;
 };
 
-const placeholderPattern =
-  /(доч|сын|син|don|son|unknown|неизвест|невідом|2 |3 |4 |5 )/i;
+type PersonCollections = {
+  children: Person[];
+  parents: Person[];
+  partners: Person[];
+};
 
 function addNeighbor(map: Map<string, string[]>, key: string, value: string) {
   const current = map.get(key) ?? [];
+
   if (!current.includes(value)) {
     current.push(value);
   }
+
   map.set(key, current);
 }
 
@@ -40,7 +37,7 @@ function collectByDepth(
   nextIds: (id: string) => string[]
 ) {
   const visited = new Set<string>([seedId]);
-  const queue = [{ id: seedId, depth: 0 }];
+  const queue = [{ depth: 0, id: seedId }];
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -55,48 +52,83 @@ function collectByDepth(
       }
 
       visited.add(nextId);
-      queue.push({ id: nextId, depth: current.depth + 1 });
+      queue.push({ depth: current.depth + 1, id: nextId });
     }
   }
 
   return visited;
 }
 
-export function isPlaceholderPerson(node: FamilyNodeRecord) {
-  return placeholderPattern.test(node.label);
+function collectRecursive(seedId: string, nextIds: (id: string) => string[]) {
+  const visited = new Set<string>();
+
+  const walk = (currentId: string) => {
+    if (visited.has(currentId)) {
+      return;
+    }
+
+    visited.add(currentId);
+
+    for (const nextId of nextIds(currentId)) {
+      walk(nextId);
+    }
+  };
+
+  walk(seedId);
+  return visited;
 }
 
-export function buildGraphSnapshot(
-  nodes: FamilyNodeRecord[],
-  links: FamilyLinkRecord[]
-): GraphSnapshot {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const parentsById = new Map<string, string[]>();
-  const childrenById = new Map<string, string[]>();
-  const partnersById = new Map<string, string[]>();
-  const incomingParentCounts = new Map(nodes.map((node) => [node.id, 0]));
+function mapPersonIds(indexes: TreeIndexes, ids: string[]) {
+  return ids
+    .map((id) => indexes.personById.get(id))
+    .filter((person): person is Person => Boolean(person));
+}
 
-  for (const link of links) {
-    if (link.type === "parent-child") {
-      addNeighbor(childrenById, link.source, link.target);
-      addNeighbor(parentsById, link.target, link.source);
-      incomingParentCounts.set(
-        link.target,
-        (incomingParentCounts.get(link.target) ?? 0) + 1
-      );
+export function buildTreeIndexes(snapshot: TreeSnapshot): TreeIndexes {
+  const personById = new Map(snapshot.people.map((person) => [person.id, person]));
+  const unionById = new Map(snapshot.unions.map((union) => [union.id, union]));
+  const unionIdsByPersonId = new Map<string, string[]>();
+  const childIdsByUnionId = new Map<string, string[]>();
+  const parentUnionIdsByChildId = new Map<string, string[]>();
+  const parentIdsByPersonId = new Map<string, string[]>();
+  const childIdsByPersonId = new Map<string, string[]>();
+  const partnerIdsByPersonId = new Map<string, string[]>();
+
+  for (const union of snapshot.unions) {
+    for (const partnerId of union.partnerIds) {
+      addNeighbor(unionIdsByPersonId, partnerId, union.id);
+
+      for (const otherPartnerId of union.partnerIds) {
+        if (otherPartnerId !== partnerId) {
+          addNeighbor(partnerIdsByPersonId, partnerId, otherPartnerId);
+        }
+      }
+    }
+  }
+
+  for (const relation of snapshot.parentChildRelations) {
+    addNeighbor(childIdsByUnionId, relation.unionId, relation.childId);
+    addNeighbor(parentUnionIdsByChildId, relation.childId, relation.unionId);
+
+    const union = unionById.get(relation.unionId);
+    if (!union) {
       continue;
     }
 
-    addNeighbor(partnersById, link.source, link.target);
-    addNeighbor(partnersById, link.target, link.source);
+    for (const parentId of union.partnerIds) {
+      addNeighbor(parentIdsByPersonId, relation.childId, parentId);
+      addNeighbor(childIdsByPersonId, parentId, relation.childId);
+    }
   }
 
-  const generationById = new Map<string, number>();
-  const rootIds = nodes
-    .filter((node) => (incomingParentCounts.get(node.id) ?? 0) === 0)
-    .map((node) => node.id);
-
-  const queue = rootIds.map((id) => ({ id, generation: 0 }));
+  const generationByPersonId = new Map<string, number>();
+  const incomingParentCounts = new Map(
+    snapshot.people.map((person) => [person.id, (parentIdsByPersonId.get(person.id) ?? []).length])
+  );
+  const rootIds = snapshot.people
+    .filter((person) => (incomingParentCounts.get(person.id) ?? 0) === 0)
+    .map((person) => person.id);
+  const queue = rootIds.map((id) => ({ generation: 0, id }));
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -105,230 +137,196 @@ export function buildGraphSnapshot(
       continue;
     }
 
-    const savedGeneration = generationById.get(current.id);
-    if (
-      savedGeneration !== undefined &&
-      savedGeneration <= current.generation
-    ) {
+    const savedGeneration = generationByPersonId.get(current.id);
+    if (savedGeneration !== undefined && savedGeneration <= current.generation) {
       continue;
     }
 
-    generationById.set(current.id, current.generation);
+    generationByPersonId.set(current.id, current.generation);
 
-    for (const childId of childrenById.get(current.id) ?? []) {
-      queue.push({ id: childId, generation: current.generation + 1 });
+    for (const childId of childIdsByPersonId.get(current.id) ?? []) {
+      queue.push({
+        generation: current.generation + 1,
+        id: childId,
+      });
     }
   }
 
-  for (let index = 0; index < 3; index += 1) {
-    for (const [id, partnerIds] of partnersById.entries()) {
-      const currentGeneration = generationById.get(id);
+  for (let index = 0; index < 4; index += 1) {
+    for (const person of snapshot.people) {
+      const generation = generationByPersonId.get(person.id);
 
-      if (currentGeneration === undefined) {
+      if (generation === undefined) {
         continue;
       }
 
-      for (const partnerId of partnerIds) {
-        const partnerGeneration = generationById.get(partnerId);
+      for (const partnerId of partnerIdsByPersonId.get(person.id) ?? []) {
+        const partnerGeneration = generationByPersonId.get(partnerId);
 
-        if (
-          partnerGeneration === undefined ||
-          partnerGeneration > currentGeneration
-        ) {
-          generationById.set(partnerId, currentGeneration);
+        if (partnerGeneration === undefined || partnerGeneration > generation) {
+          generationByPersonId.set(partnerId, generation);
         }
       }
     }
   }
 
-  for (const node of nodes) {
-    if (!generationById.has(node.id)) {
-      generationById.set(node.id, 0);
+  for (const person of snapshot.people) {
+    if (!generationByPersonId.has(person.id)) {
+      generationByPersonId.set(person.id, 0);
     }
   }
 
-  const descendantsCountById = new Map<string, number>();
+  const descendantsCountByPersonId = new Map<string, number>();
 
-  const countDescendants = (id: string): number => {
-    const cached = descendantsCountById.get(id);
+  const countDescendants = (personId: string, visited = new Set<string>()): number => {
+    if (visited.has(personId)) {
+      return 0;
+    }
+
+    const cached = descendantsCountByPersonId.get(personId);
     if (cached !== undefined) {
       return cached;
     }
 
-    const total = (childrenById.get(id) ?? []).reduce((sum, childId) => {
-      return sum + 1 + countDescendants(childId);
+    const nextVisited = new Set(visited);
+    nextVisited.add(personId);
+
+    const total = (childIdsByPersonId.get(personId) ?? []).reduce((sum, childId) => {
+      return sum + 1 + countDescendants(childId, nextVisited);
     }, 0);
 
-    descendantsCountById.set(id, total);
+    descendantsCountByPersonId.set(personId, total);
     return total;
   };
 
-  for (const node of nodes) {
-    countDescendants(node.id);
+  for (const person of snapshot.people) {
+    countDescendants(person.id);
   }
 
   return {
-    nodeById,
-    parentsById,
-    childrenById,
-    partnersById,
-    generationById,
-    descendantsCountById,
+    childIdsByPersonId,
+    childIdsByUnionId,
+    descendantsCountByPersonId,
+    generationByPersonId,
+    parentIdsByPersonId,
+    parentUnionIdsByChildId,
+    partnerIdsByPersonId,
+    personById,
+    unionById,
+    unionIdsByPersonId,
   };
 }
 
-export function getVisibleNodeIds(options: {
-  depth: number;
-  links: FamilyLinkRecord[];
-  nodes: FamilyNodeRecord[];
-  selectedId: string;
-  showPartners: boolean;
-  showPlaceholders: boolean;
-  snapshot: GraphSnapshot;
-  viewMode: ViewMode;
-}) {
-  const {
-    depth,
-    links,
-    nodes,
-    selectedId,
-    showPartners,
-    showPlaceholders,
-    snapshot,
-    viewMode,
-  } = options;
-
-  const selectedNode = snapshot.nodeById.get(selectedId);
-  if (!selectedNode) {
-    return new Set(nodes.map((node) => node.id));
-  }
-
-  let visibleIds = new Set<string>();
-
-  if (viewMode === "overview") {
-    visibleIds = new Set(nodes.map((node) => node.id));
-  }
-
-  if (viewMode === "focus") {
-    visibleIds = collectByDepth(selectedId, depth, (id) => {
-      const neighbors = [
-        ...(snapshot.parentsById.get(id) ?? []),
-        ...(snapshot.childrenById.get(id) ?? []),
-      ];
-
-      if (showPartners) {
-        neighbors.push(...(snapshot.partnersById.get(id) ?? []));
-      }
-
-      return neighbors;
-    });
-  }
-
-  if (viewMode === "ancestors") {
-    visibleIds = collectByDepth(
-      selectedId,
-      depth,
-      (id) => snapshot.parentsById.get(id) ?? []
-    );
-  }
-
-  if (viewMode === "descendants") {
-    visibleIds = collectByDepth(
-      selectedId,
-      depth,
-      (id) => snapshot.childrenById.get(id) ?? []
-    );
-  }
-
-  if (showPartners) {
-    const withPartners = new Set(visibleIds);
-    for (const id of visibleIds) {
-      for (const partnerId of snapshot.partnersById.get(id) ?? []) {
-        withPartners.add(partnerId);
-      }
-    }
-    visibleIds = withPartners;
-  }
-
-  if (!showPlaceholders) {
-    visibleIds = new Set(
-      [...visibleIds].filter((id) => {
-        const node = snapshot.nodeById.get(id);
-        if (!node) {
-          return false;
-        }
-
-        if (id === selectedId) {
-          return true;
-        }
-
-        return !isPlaceholderPerson(node);
-      })
-    );
-  }
-
-  const connectedIds = new Set<string>();
-  for (const link of links) {
-    if (!showPartners && link.type === "partner") {
-      continue;
-    }
-
-    if (visibleIds.has(link.source) && visibleIds.has(link.target)) {
-      connectedIds.add(link.source);
-      connectedIds.add(link.target);
-    }
-  }
-
-  connectedIds.add(selectedId);
-  return connectedIds.size > 0 ? connectedIds : visibleIds;
-}
-
-export function getImmediateFamily(snapshot: GraphSnapshot, selectedId: string) {
+export function getImmediateFamily(indexes: TreeIndexes, personId: string): PersonCollections {
   return {
-    parents: (snapshot.parentsById.get(selectedId) ?? [])
-      .map((id) => snapshot.nodeById.get(id))
-      .filter(Boolean) as FamilyNodeRecord[],
-    partners: (snapshot.partnersById.get(selectedId) ?? [])
-      .map((id) => snapshot.nodeById.get(id))
-      .filter(Boolean) as FamilyNodeRecord[],
-    children: (snapshot.childrenById.get(selectedId) ?? [])
-      .map((id) => snapshot.nodeById.get(id))
-      .filter(Boolean) as FamilyNodeRecord[],
+    children: mapPersonIds(indexes, indexes.childIdsByPersonId.get(personId) ?? []),
+    parents: mapPersonIds(indexes, indexes.parentIdsByPersonId.get(personId) ?? []),
+    partners: mapPersonIds(indexes, indexes.partnerIdsByPersonId.get(personId) ?? []),
   };
 }
 
-export function getLineagePath(snapshot: GraphSnapshot, selectedId: string) {
-  const path: FamilyNodeRecord[] = [];
+export function getLineagePath(indexes: TreeIndexes, personId: string) {
+  const path: Person[] = [];
   const visited = new Set<string>();
-  let currentId: string | undefined = selectedId;
+  let currentId: string | undefined = personId;
 
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
 
-    const person = snapshot.nodeById.get(currentId);
+    const person = indexes.personById.get(currentId);
     if (person) {
       path.unshift(person);
     }
 
-    currentId = (snapshot.parentsById.get(currentId) ?? [])[0];
+    currentId = (indexes.parentIdsByPersonId.get(currentId) ?? [])[0];
   }
 
   return path;
 }
 
-export function getBranchAnchors(snapshot: GraphSnapshot) {
-  return [...snapshot.nodeById.values()]
-    .filter((node) => !isPlaceholderPerson(node))
+export function getVisiblePersonIds(options: {
+  depth: number;
+  indexes: TreeIndexes;
+  selectedId: string;
+  viewMode: ViewMode;
+}) {
+  const { depth, indexes, selectedId, viewMode } = options;
+
+  if (!indexes.personById.has(selectedId)) {
+    return new Set(indexes.personById.keys());
+  }
+
+  let visibleIds = new Set<string>();
+
+  if (viewMode === "overview") {
+    visibleIds = new Set(indexes.personById.keys());
+  }
+
+  if (viewMode === "focus") {
+    const ancestors = collectRecursive(selectedId, (id) => indexes.parentIdsByPersonId.get(id) ?? []);
+    const descendants = collectByDepth(selectedId, depth, (id) => indexes.childIdsByPersonId.get(id) ?? []);
+
+    visibleIds = new Set([...ancestors, ...descendants]);
+  }
+
+  if (viewMode === "ancestors") {
+    visibleIds = collectRecursive(selectedId, (id) => indexes.parentIdsByPersonId.get(id) ?? []);
+  }
+
+  if (viewMode === "descendants") {
+    visibleIds = collectByDepth(selectedId, Math.max(depth + 1, 3), (id) => indexes.childIdsByPersonId.get(id) ?? []);
+  }
+
+  const withPartners = new Set(visibleIds);
+  for (const id of visibleIds) {
+    for (const partnerId of indexes.partnerIdsByPersonId.get(id) ?? []) {
+      withPartners.add(partnerId);
+    }
+  }
+
+  return withPartners;
+}
+
+export function getBranchAnchors(indexes: TreeIndexes) {
+  return [...indexes.personById.values()]
+    .filter((person) => !person.isDraft)
     .sort((left, right) => {
       const descendantsDiff =
-        (snapshot.descendantsCountById.get(right.id) ?? 0) -
-        (snapshot.descendantsCountById.get(left.id) ?? 0);
+        (indexes.descendantsCountByPersonId.get(right.id) ?? 0) -
+        (indexes.descendantsCountByPersonId.get(left.id) ?? 0);
 
       if (descendantsDiff !== 0) {
         return descendantsDiff;
       }
 
-      return left.label.localeCompare(right.label, "ru");
+      return left.name.localeCompare(right.name, "ru");
     })
     .slice(0, 8);
+}
+
+export function getChildUnionOptions(indexes: TreeIndexes, personId: string) {
+  return (indexes.unionIdsByPersonId.get(personId) ?? [])
+    .map((unionId) => indexes.unionById.get(unionId))
+    .filter((union): union is Union => Boolean(union));
+}
+
+export function getUnionLabel(indexes: TreeIndexes, union: Union, activePersonId: string) {
+  const partners = union.partnerIds
+    .map((partnerId) => indexes.personById.get(partnerId))
+    .filter((person): person is Person => Boolean(person));
+
+  if (partners.length === 1 && partners[0]?.id === activePersonId) {
+    return "Без партнера";
+  }
+
+  const otherPartners = partners.filter((person) => person.id !== activePersonId);
+  if (otherPartners.length === 0) {
+    return "Без партнера";
+  }
+
+  return otherPartners.map((person) => person.name).join(", ");
+}
+
+export function getPersonSearchIndex(person: Person) {
+  return `${person.name} ${person.yearsText} ${person.shortDescription}`.toLocaleLowerCase();
 }

@@ -3,8 +3,8 @@ import { Edge, Node, Position } from "reactflow";
 
 export type LayoutDirection = "TB" | "LR";
 
-const nodeWidth = 244;
-const nodeHeight = 112;
+const nodeWidth = 264;
+const nodeHeight = 176;
 
 export const getLayoutedElements = (
   nodes: Node[],

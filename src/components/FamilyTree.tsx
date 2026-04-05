@@ -1,321 +1,600 @@
 "use client";
 
-import React, { startTransition, useDeferredValue, useEffect, useState } from "react";
-import ReactFlow, {
-  Background,
-  BackgroundVariant,
-  NodeTypes,
-  Panel,
-  ReactFlowInstance,
-} from "reactflow";
-import "reactflow/dist/style.css";
+import React, {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useState,
+} from "react";
+import type { Edge, Node } from "reactflow";
 
-import familyData from "../data/familyTree.json";
 import {
-  buildGraphSnapshot,
+  createChildForPerson,
+  createPartnerForPerson,
+  createStandalonePerson,
+  updatePerson,
+  type EditablePersonInput,
+} from "@/domain/familyTreeCommands";
+import type { TreeSnapshot } from "@/domain/familyTree";
+import {
+  getBrowserFamilyTreeRepository,
+  hasStoredTreeSnapshot,
+} from "@/repositories/browserFamilyTreeRepository";
+import {
+  buildTreeIndexes,
   getBranchAnchors,
+  getChildUnionOptions,
   getImmediateFamily,
   getLineagePath,
-  getVisibleNodeIds,
-  isPlaceholderPerson,
-  type FamilyLinkRecord,
-  type FamilyNodeRecord,
+  getPersonSearchIndex,
+  getUnionLabel,
+  getVisiblePersonIds,
   type ViewMode,
-} from "../utils/familyGraph";
-import { getLayoutedElements, type LayoutDirection } from "../utils/layout";
-import CustomNode from "./CustomNode";
+} from "@/utils/familyGraph";
+import { type LayoutDirection } from "@/utils/layout";
 
-const nodeTypes: NodeTypes = { custom: CustomNode };
-const accents = ["#0f766e", "#b45309", "#1d4ed8", "#a21caf", "#be123c", "#0f172a"];
+import RelativeSection from "./RelativeSection";
+import TreeMapCanvas from "./TreeMapCanvas";
+
+const repository = getBrowserFamilyTreeRepository();
+const accents = ["#0f766e", "#b45309", "#1d4ed8", "#0f172a", "#be123c", "#14532d"];
+const defaultPersonId = "tikhon";
 
 const viewButtons: { id: ViewMode; label: string; note: string }[] = [
-  { id: "focus", label: "Моя ветка", note: "Показать человека и ближайших родственников" },
-  { id: "ancestors", label: "Предки", note: "Подняться вверх по роду" },
-  { id: "descendants", label: "Потомки", note: "Посмотреть детей и следующие поколения" },
-  { id: "overview", label: "Все дерево", note: "Открыть полную карту семьи" },
+  {
+    id: "focus",
+    label: "Моя ветка",
+    note: "Показать человека, его линию рода и ближайших потомков.",
+  },
+  {
+    id: "ancestors",
+    label: "Предки",
+    note: "Подняться вверх по семейной линии.",
+  },
+  {
+    id: "descendants",
+    label: "Потомки",
+    note: "Посмотреть детей и следующие поколения.",
+  },
+  {
+    id: "overview",
+    label: "Все дерево",
+    note: "Открыть полную карту семьи.",
+  },
 ];
 
-const layoutButtons: { id: LayoutDirection; label: string }[] = [
-  { id: "TB", label: "Сверху вниз" },
-  { id: "LR", label: "Слева направо" },
-];
+function getDefaultPerson(snapshot: TreeSnapshot | null) {
+  if (!snapshot || snapshot.people.length === 0) {
+    return null;
+  }
 
-const initialNodes = familyData.nodes.map((node) => ({
-  id: node.id,
-  label: node.label,
-  info: node.info,
-})) as FamilyNodeRecord[];
-
-const initialLinks = familyData.edges.map((edge) => ({
-  source: edge.source,
-  target: edge.target,
-  type: edge.type,
-})) as FamilyLinkRecord[];
-
-type RelativeSectionProps = {
-  accent: string;
-  emptyLabel: string;
-  items: FamilyNodeRecord[];
-  title: string;
-  onSelect: (id: string) => void;
-};
-
-function RelativeSection({
-  accent,
-  emptyLabel,
-  items,
-  title,
-  onSelect,
-}: RelativeSectionProps) {
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        <span
-          className="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]"
-          style={{ backgroundColor: `${accent}15`, color: accent }}
-        >
-          {items.length}
-        </span>
-      </div>
-
-      {items.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {items.map((person) => (
-            <button
-              key={person.id}
-              type="button"
-              onClick={() => onSelect(person.id)}
-              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-white"
-            >
-              {person.label}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm leading-relaxed text-slate-500">{emptyLabel}</p>
-      )}
-    </section>
+    snapshot.people.find((person) => person.id === defaultPersonId) ??
+    snapshot.people.find((person) => !person.isDraft) ??
+    snapshot.people[0]
   );
 }
 
+function formatSavedLabel(isSaving: boolean, hasLocalChanges: boolean) {
+  if (isSaving) {
+    return "Сохраняем изменения...";
+  }
+
+  if (hasLocalChanges) {
+    return "Изменения сохранены на этом устройстве.";
+  }
+
+  return "Сейчас открыты исходные данные без локальных правок.";
+}
+
 export default function FamilyTree() {
-  const defaultNode = initialNodes.find((node) => node.id === "tikhon") ?? initialNodes[0];
-  const [graphNodes, setGraphNodes] = useState(initialNodes);
-  const [graphLinks, setGraphLinks] = useState(initialLinks);
-  const [selectedId, setSelectedId] = useState(defaultNode?.id ?? "");
+  const [snapshot, setSnapshot] = useState<TreeSnapshot | null>(null);
+  const [selectedId, setSelectedId] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("focus");
-  const [layoutDirection, setLayoutDirection] = useState<LayoutDirection>("TB");
-  const [focusDepth, setFocusDepth] = useState(2);
-  const [showPartners, setShowPartners] = useState(true);
-  const [showPlaceholders, setShowPlaceholders] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [draftLabel, setDraftLabel] = useState(defaultNode?.label ?? "");
-  const [draftInfo, setDraftInfo] = useState(defaultNode?.info ?? "");
-  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [hasLocalChanges, setHasLocalChanges] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [draftName, setDraftName] = useState("");
+  const [draftYearsText, setDraftYearsText] = useState("");
+  const [draftShortDescription, setDraftShortDescription] = useState("");
+  const [draftPhotoUrl, setDraftPhotoUrl] = useState("");
+  const [draftIsDraft, setDraftIsDraft] = useState(false);
+  const [childUnionId, setChildUnionId] = useState("");
 
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
-  const snapshot = buildGraphSnapshot(graphNodes, graphLinks);
-  const activeId = snapshot.nodeById.has(selectedId) ? selectedId : graphNodes[0]?.id ?? "";
-  const selectedNode = snapshot.nodeById.get(activeId);
-  const family = activeId
-    ? getImmediateFamily(snapshot, activeId)
-    : { parents: [], partners: [], children: [] };
-  const lineage = activeId ? getLineagePath(snapshot, activeId) : [];
-  const branchAnchors = getBranchAnchors(snapshot);
+  const indexes = snapshot ? buildTreeIndexes(snapshot) : null;
+  const activePerson =
+    snapshot && indexes
+      ? indexes.personById.get(selectedId) ?? getDefaultPerson(snapshot)
+      : null;
+  const activeId = activePerson?.id ?? "";
+  const activeName = activePerson?.name ?? "";
+  const activeYearsText = activePerson?.yearsText ?? "";
+  const activeShortDescription = activePerson?.shortDescription ?? "";
+  const activePhotoUrl = activePerson?.photoUrl ?? "";
+  const activeIsDraft = activePerson?.isDraft ?? false;
+  const family =
+    indexes && activeId
+      ? getImmediateFamily(indexes, activeId)
+      : { children: [], parents: [], partners: [] };
+  const lineage = indexes && activeId ? getLineagePath(indexes, activeId) : [];
+  const branchAnchors = indexes ? getBranchAnchors(indexes) : [];
+  const childUnionOptions = indexes && activeId ? getChildUnionOptions(indexes, activeId) : [];
+  const childUnionSignature = childUnionOptions.map((union) => union.id).join("|");
+  const layoutDirection: LayoutDirection = isDesktop ? "LR" : "TB";
+  const visibleIds =
+    indexes && activeId
+      ? getVisiblePersonIds({
+          depth: 2,
+          indexes,
+          selectedId: activeId,
+          viewMode,
+        })
+      : new Set<string>();
 
-  const visibleIds = activeId
-    ? getVisibleNodeIds({
-        depth: focusDepth,
-        links: graphLinks,
-        nodes: graphNodes,
-        selectedId: activeId,
-        showPartners,
-        showPlaceholders,
-        snapshot,
-        viewMode,
-      })
-    : new Set(graphNodes.map((node) => node.id));
+  const searchResults =
+    snapshot && deferredSearchQuery
+      ? snapshot.people
+          .filter((person) =>
+            getPersonSearchIndex(person).includes(deferredSearchQuery.toLocaleLowerCase())
+          )
+          .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+          .slice(0, 8)
+      : [];
 
-  const searchResults = deferredSearchQuery
-    ? graphNodes
-        .filter((node) =>
-          `${node.label} ${node.info ?? ""}`
-            .toLocaleLowerCase()
-            .includes(deferredSearchQuery.toLocaleLowerCase())
-        )
-        .sort((left, right) => left.label.localeCompare(right.label, "ru"))
-        .slice(0, 8)
-    : [];
+  const flowNodes: Node[] =
+    snapshot && indexes
+      ? snapshot.people
+          .filter((person) => visibleIds.has(person.id))
+          .map((person) => {
+            const generation = indexes.generationByPersonId.get(person.id) ?? 0;
 
-  const flowNodes = graphNodes
-    .filter((node) => visibleIds.has(node.id))
-    .map((node) => {
-      const generation = snapshot.generationById.get(node.id) ?? 0;
-
-      return {
-        id: node.id,
-        type: "custom",
-        position: { x: 0, y: 0 },
-        draggable: false,
-        data: {
-          accent: accents[generation % accents.length],
-          childrenCount: (snapshot.childrenById.get(node.id) ?? []).length,
-          direction: layoutDirection,
-          generation,
-          info: node.info,
-          isPlaceholder: isPlaceholderPerson(node),
-          isSelected: node.id === activeId,
-          label: node.label,
-          partnersCount: (snapshot.partnersById.get(node.id) ?? []).length,
-        },
-      };
-    });
-
-  const flowEdges = graphLinks
-    .filter(
-      (link) =>
-        (showPartners || link.type !== "partner") &&
-        visibleIds.has(link.source) &&
-        visibleIds.has(link.target)
-    )
-    .map((link, index) => {
-      const isActive = link.source === activeId || link.target === activeId;
-
-      return {
-        id: `edge-${index}-${link.source}-${link.target}`,
-        source: link.source,
-        target: link.target,
-        type: link.type === "partner" ? "straight" : "smoothstep",
-        data: { relationship: link.type },
-        interactionWidth: 24,
-        style:
-          link.type === "partner"
-            ? {
-                opacity: isActive ? 1 : 0.72,
-                stroke: "#c47b3a",
-                strokeDasharray: "8 8",
-                strokeWidth: isActive ? 2.6 : 2,
-              }
-            : {
-                opacity: isActive ? 1 : 0.8,
-                stroke: isActive ? "#0f172a" : "#64748b",
-                strokeWidth: isActive ? 2.8 : 2,
+            return {
+              data: {
+                accent: accents[generation % accents.length],
+                childrenCount: (indexes.childIdsByPersonId.get(person.id) ?? []).length,
+                direction: layoutDirection,
+                generation,
+                isDraft: person.isDraft,
+                isSelected: person.id === activeId,
+                name: person.name,
+                partnersCount: (indexes.partnerIdsByPersonId.get(person.id) ?? []).length,
+                shortDescription: person.shortDescription,
+                yearsText: person.yearsText,
               },
-      };
-    });
+              draggable: false,
+              id: person.id,
+              position: { x: 0, y: 0 },
+              type: "custom",
+            };
+          })
+      : [];
 
-  const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-    flowNodes,
-    flowEdges,
-    layoutDirection
-  );
+  const flowEdges: Edge[] =
+    snapshot && indexes
+      ? [
+          ...snapshot.unions.flatMap((union, unionIndex) => {
+            if (union.partnerIds.length < 2) {
+              return [];
+            }
+
+            const edges: Edge[] = [];
+
+            for (let index = 0; index < union.partnerIds.length; index += 1) {
+              for (let nextIndex = index + 1; nextIndex < union.partnerIds.length; nextIndex += 1) {
+                const source = union.partnerIds[index];
+                const target = union.partnerIds[nextIndex];
+
+                if (!visibleIds.has(source) || !visibleIds.has(target)) {
+                  continue;
+                }
+
+                const isActive = source === activeId || target === activeId;
+
+                edges.push({
+                  data: { relationship: "partner" },
+                  id: `edge_partner_${unionIndex}_${source}_${target}`,
+                  interactionWidth: 22,
+                  source,
+                  style: {
+                    opacity: isActive ? 1 : 0.72,
+                    stroke: "#c47b3a",
+                    strokeDasharray: "8 8",
+                    strokeWidth: isActive ? 2.6 : 2,
+                  },
+                  target,
+                  type: "straight",
+                });
+              }
+            }
+
+            return edges;
+          }),
+          ...snapshot.parentChildRelations.flatMap((relation, relationIndex) => {
+            const union = indexes.unionById.get(relation.unionId);
+            if (!union) {
+              return [];
+            }
+
+            return union.partnerIds
+              .filter((parentId) => visibleIds.has(parentId) && visibleIds.has(relation.childId))
+              .map((parentId) => {
+                const isActive = parentId === activeId || relation.childId === activeId;
+
+                return {
+                  data: { relationship: "parent-child" },
+                  id: `edge_parent_${relationIndex}_${parentId}_${relation.childId}`,
+                  interactionWidth: 24,
+                  source: parentId,
+                  style: {
+                    opacity: isActive ? 1 : 0.82,
+                    stroke: isActive ? "#0f172a" : "#64748b",
+                    strokeWidth: isActive ? 2.8 : 2,
+                  },
+                  target: relation.childId,
+                  type: "smoothstep",
+                };
+              });
+          }),
+        ]
+      : [];
+
+  async function persistSnapshot(nextSnapshot: TreeSnapshot) {
+    setSnapshot(nextSnapshot);
+    setHasLocalChanges(true);
+    setIsSaving(true);
+    setErrorMessage("");
+
+    try {
+      await repository.saveTree(nextSnapshot);
+    } catch {
+      setErrorMessage(
+        "Не удалось сохранить изменения в браузере. Проверьте доступ к localStorage."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   useEffect(() => {
-    if (!flowInstance || layoutedNodes.length === 0) {
+    let isCancelled = false;
+
+    async function loadTree() {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      try {
+        const loadedSnapshot = await repository.loadTree();
+
+        if (isCancelled) {
+          return;
+        }
+
+        const defaultPerson = getDefaultPerson(loadedSnapshot);
+
+        startTransition(() => {
+          setSnapshot(loadedSnapshot);
+          setSelectedId(defaultPerson?.id ?? "");
+          setHasLocalChanges(hasStoredTreeSnapshot());
+        });
+      } catch {
+        if (!isCancelled) {
+          setErrorMessage("Не получилось открыть дерево. Попробуйте обновить страницу.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadTree();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const syncValue = () => setIsDesktop(mediaQuery.matches);
+
+    syncValue();
+    mediaQuery.addEventListener("change", syncValue);
+
+    return () => mediaQuery.removeEventListener("change", syncValue);
+  }, []);
+
+  useEffect(() => {
+    if (!snapshot || !activeId) {
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      flowInstance.fitView({
-        duration: 420,
-        maxZoom: viewMode === "overview" ? 0.82 : 1.05,
-        padding: 0.22,
-      });
-    }, 60);
+    const nextChildUnionIds = childUnionSignature ? childUnionSignature.split("|") : [];
 
-    return () => window.clearTimeout(timeoutId);
-  }, [activeId, flowInstance, focusDepth, layoutDirection, layoutedNodes.length, showPartners, showPlaceholders, viewMode]);
+    setDraftName(activeName);
+    setDraftYearsText(activeYearsText);
+    setDraftShortDescription(activeShortDescription);
+    setDraftPhotoUrl(activePhotoUrl);
+    setDraftIsDraft(activeIsDraft);
+    setChildUnionId((currentUnionId) => {
+      if (nextChildUnionIds.includes(currentUnionId)) {
+        return currentUnionId;
+      }
 
-  function syncDraftFor(id: string) {
-    const person = snapshot.nodeById.get(id);
-    setDraftLabel(person?.label ?? "");
-    setDraftInfo(person?.info ?? "");
-  }
+      return nextChildUnionIds[0] ?? "";
+    });
+  }, [
+    activeId,
+    activeIsDraft,
+    activeName,
+    activePhotoUrl,
+    activeShortDescription,
+    activeYearsText,
+    childUnionSignature,
+    snapshot,
+  ]);
 
-  function focusPerson(id: string, nextMode = viewMode) {
+  useEffect(() => {
+    if (!snapshot || activeId) {
+      return;
+    }
+
+    const defaultPerson = getDefaultPerson(snapshot);
+    if (defaultPerson) {
+      setSelectedId(defaultPerson.id);
+    }
+  }, [activeId, snapshot]);
+
+  function focusPerson(id: string, nextMode: ViewMode = viewMode, addToHistory = true) {
+    if (!snapshot || !indexes || !indexes.personById.has(id)) {
+      return;
+    }
+
     startTransition(() => {
-      syncDraftFor(id);
+      if (addToHistory && activeId && activeId !== id) {
+        setHistory((currentHistory) => [...currentHistory.slice(-19), activeId]);
+      }
+
       setSelectedId(id);
       setViewMode(nextMode);
       setSearchQuery("");
+      setIsMapOpen(false);
     });
   }
 
-  function createRelative(kind: "child" | "partner") {
-    if (!activeId) {
+  function openMapForMode(nextMode: ViewMode) {
+    startTransition(() => {
+      setViewMode(nextMode);
+      setIsMapOpen(true);
+    });
+  }
+
+  function goBack() {
+    setHistory((currentHistory) => {
+      if (currentHistory.length === 0) {
+        return currentHistory;
+      }
+
+      const nextHistory = [...currentHistory];
+      const previousId = nextHistory.pop();
+
+      if (previousId) {
+        startTransition(() => {
+          setSelectedId(previousId);
+          setViewMode("focus");
+          setSearchQuery("");
+        });
+      }
+
+      return nextHistory;
+    });
+  }
+
+  function buildDraftInput(): EditablePersonInput {
+    return {
+      isDraft: draftIsDraft,
+      name: draftName,
+      photoUrl: draftPhotoUrl,
+      shortDescription: draftShortDescription,
+      yearsText: draftYearsText,
+    };
+  }
+
+  function resetCurrentDraftFields() {
+    if (!activePerson) {
       return;
     }
 
-    const newId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const nextLabel = kind === "child" ? "Новый человек" : "Новый партнер";
-    const nextInfo = "Черновик: добавьте имя, годы жизни или место.";
+    setDraftName(activePerson.name);
+    setDraftYearsText(activePerson.yearsText);
+    setDraftShortDescription(activePerson.shortDescription);
+    setDraftPhotoUrl(activePerson.photoUrl ?? "");
+    setDraftIsDraft(activePerson.isDraft);
+  }
 
-    setGraphNodes((current) => [...current, { id: newId, label: nextLabel, info: nextInfo }]);
-    setGraphLinks((current) => [
-      ...current,
-      { source: activeId, target: newId, type: kind === "child" ? "parent-child" : "partner" },
-    ]);
+  function handleSavePerson() {
+    if (!snapshot || !activePerson) {
+      return;
+    }
+
+    const nextSnapshot = updatePerson(snapshot, activePerson.id, buildDraftInput());
+    void persistSnapshot(nextSnapshot);
+  }
+
+  function handleAddStandalonePerson() {
+    if (!snapshot) {
+      return;
+    }
+
+    const result = createStandalonePerson(snapshot);
 
     startTransition(() => {
-      setDraftLabel(nextLabel);
-      setDraftInfo(nextInfo);
-      setSelectedId(newId);
+      if (activeId) {
+        setHistory((currentHistory) => [...currentHistory.slice(-19), activeId]);
+      }
+
+      setSelectedId(result.person.id);
       setViewMode("focus");
-      setIsEditMode(true);
+      setIsEditOpen(true);
+      setSearchQuery("");
     });
+
+    void persistSnapshot(result.snapshot);
   }
 
-  function saveDraft() {
-    if (!selectedNode) {
+  function handleAddPartner() {
+    if (!snapshot || !activeId) {
       return;
     }
 
-    setGraphNodes((current) =>
-      current.map((node) =>
-        node.id === selectedNode.id
-          ? { ...node, label: draftLabel.trim() || node.label, info: draftInfo.trim() }
-          : node
-      )
-    );
+    const result = createPartnerForPerson(snapshot, activeId);
+
+    startTransition(() => {
+      setHistory((currentHistory) => [...currentHistory.slice(-19), activeId]);
+      setSelectedId(result.person.id);
+      setViewMode("focus");
+      setIsEditOpen(true);
+    });
+
+    void persistSnapshot(result.snapshot);
   }
 
-  function removeSelectedNode() {
-    if (!selectedNode) {
+  function handleAddChild() {
+    if (!snapshot || !activeId) {
       return;
     }
 
-    const fallbackId = graphNodes.find((node) => node.id !== selectedNode.id)?.id ?? "";
-    setGraphNodes((current) => current.filter((node) => node.id !== selectedNode.id));
-    setGraphLinks((current) =>
-      current.filter((link) => link.source !== selectedNode.id && link.target !== selectedNode.id)
-    );
-    syncDraftFor(fallbackId);
-    setSelectedId(fallbackId);
+    const result = createChildForPerson(snapshot, {
+      parentId: activeId,
+      preferredUnionId: childUnionId || undefined,
+    });
+
+    startTransition(() => {
+      setHistory((currentHistory) => [...currentHistory.slice(-19), activeId]);
+      setSelectedId(result.person.id);
+      setViewMode("focus");
+      setIsEditOpen(true);
+    });
+
+    void persistSnapshot(result.snapshot);
   }
+
+  async function handleResetTree() {
+    const isConfirmed = window.confirm(
+      "Вернуться к исходным данным и удалить локальные изменения на этом устройстве?"
+    );
+
+    if (!isConfirmed) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage("");
+
+    try {
+      const nextSnapshot = await repository.resetTree();
+      const defaultPerson = getDefaultPerson(nextSnapshot);
+
+      startTransition(() => {
+        setSnapshot(nextSnapshot);
+        setSelectedId(defaultPerson?.id ?? "");
+        setViewMode("focus");
+        setSearchQuery("");
+        setHistory([]);
+        setIsEditOpen(false);
+        setIsMapOpen(false);
+        setHasLocalChanges(false);
+      });
+    } catch {
+      setErrorMessage("Не удалось вернуть исходные данные. Попробуйте еще раз.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (isLoading || !snapshot || !activePerson || !indexes) {
+    return (
+      <div className="mx-auto flex min-h-[calc(100vh-24px)] max-w-6xl items-center justify-center">
+        <div className="w-full max-w-md rounded-[32px] border border-white/80 bg-white/90 p-6 text-center shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Family Archive</div>
+          <h1 className="mt-3 font-[family-name:var(--font-cormorant)] text-4xl leading-none text-slate-950">
+            Загружаем дерево
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">
+            Подготавливаем карточки людей, семейные связи и локальные изменения.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const selectedUnion = childUnionOptions.find((union) => union.id === childUnionId);
+  const selectedUnionLabel = selectedUnion
+    ? getUnionLabel(indexes, selectedUnion, activeId)
+    : "Без партнера";
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-24px)] max-w-6xl flex-col gap-3 md:gap-4">
+    <div className="mx-auto flex min-h-[calc(100vh-24px)] max-w-5xl flex-col gap-3 pb-24 md:gap-4 lg:pb-6">
       <section className="rounded-[32px] border border-white/80 bg-white/88 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur md:p-5">
-        <div className="flex flex-col gap-4">
-          <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1c3553_55%,#0f766e_100%)] p-5 text-white">
-            <div className="text-[11px] uppercase tracking-[0.26em] text-white/70">Family Canvas</div>
-            <h1 className="mt-2 font-[family-name:var(--font-cormorant)] text-4xl leading-none">Родовое дерево</h1>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1c3553_52%,#0f766e_100%)] p-5 text-white">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/18 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80">
+                Family Archive
+              </span>
+              <span className="rounded-full border border-white/18 bg-white/8 px-3 py-1 text-[11px] text-white/80">
+                {formatSavedLabel(isSaving, hasLocalChanges)}
+              </span>
+            </div>
+
+            <h1 className="mt-4 font-[family-name:var(--font-cormorant)] text-4xl leading-none md:text-5xl">
+              Найдите человека
+            </h1>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/82">
-              Прототип под телефон: найти человека, открыть его карточку и дальше двигаться
-              большими понятными действиями, а не настройками редактора.
+              Сначала откройте карточку родственника. Уже оттуда можно перейти к родителям,
+              партнерам, детям или всей карте семьи.
             </p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsMapOpen(true)}
+                className="rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+              >
+                Открыть карту
+              </button>
+              <button
+                type="button"
+                onClick={handleAddStandalonePerson}
+                className="rounded-full border border-white/18 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/14"
+              >
+                Добавить человека
+              </button>
+              <button
+                type="button"
+                onClick={handleResetTree}
+                className="rounded-full border border-white/18 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/14"
+              >
+                Вернуться к исходным данным
+              </button>
+            </div>
           </div>
 
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+          <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-4">
             <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Найти человека
             </label>
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Имя, место, короткая заметка"
+              placeholder="Имя, годы жизни или короткая заметка"
               className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-base text-slate-800 outline-none transition focus:border-slate-400"
             />
 
@@ -328,307 +607,350 @@ export default function FamilyTree() {
                     onClick={() => focusPerson(person.id, "focus")}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300"
                   >
-                    <div className="text-sm font-semibold text-slate-900">{person.label}</div>
-                    <div className="mt-1 text-xs text-slate-500">{person.info || "Без короткого описания"}</div>
+                    <div className="text-sm font-semibold text-slate-950">{person.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {person.yearsText || person.shortDescription || "Без короткого описания"}
+                    </div>
                   </button>
                 ))}
+              </div>
+            ) : deferredSearchQuery ? (
+              <p className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                По запросу ничего не найдено. Попробуйте другую часть имени или заметки.
+              </p>
+            ) : null}
+
+            {branchAnchors.length > 0 ? (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  С чего начать
+                </div>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                  {branchAnchors.map((person) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => focusPerson(person.id, "focus")}
+                      className={`shrink-0 rounded-full px-4 py-3 text-sm font-medium transition ${
+                        person.id === activeId
+                          ? "bg-slate-900 text-white"
+                          : "bg-white text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {person.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>
         </div>
       </section>
 
-      <div className="grid gap-3 lg:grid-cols-[380px_minmax(0,1fr)] lg:gap-4">
-        <div className="flex flex-col gap-3">
-          {selectedNode ? (
-            <>
-              <section className="rounded-[32px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] md:p-5">
-                <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Сейчас открыто</div>
-                <h2 className="mt-2 text-3xl font-semibold leading-tight text-slate-950">
-                  {selectedNode.label}
-                </h2>
-                <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                  {selectedNode.info || "Здесь будут годы жизни, место, источник или короткая семейная история."}
-                </p>
+      {errorMessage ? (
+        <section className="rounded-[28px] border border-rose-200 bg-rose-50/92 px-4 py-3 text-sm text-rose-700">
+          {errorMessage}
+        </section>
+      ) : null}
 
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  {lineage.map((person, index) => (
-                    <React.Fragment key={person.id}>
-                      <button
-                        type="button"
-                        onClick={() => focusPerson(person.id, "focus")}
-                        className={`rounded-full px-3 py-2 text-sm ${
-                          person.id === activeId ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {person.label}
-                      </button>
-                      {index < lineage.length - 1 ? <span className="text-slate-300">/</span> : null}
-                    </React.Fragment>
-                  ))}
+      <div className="flex flex-col gap-3">
+          <section className="rounded-[32px] border border-white/80 bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] md:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                  Сейчас открыта карточка
                 </div>
+                <h2 className="mt-2 text-3xl font-semibold leading-tight text-slate-950">
+                  {activePerson.name}
+                </h2>
+                <div className="mt-2 text-sm font-medium text-slate-500">
+                  {activePerson.yearsText || "Годы жизни пока не указаны"}
+                </div>
+              </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {viewButtons.map((option) => (
+              <div className="flex items-center gap-2">
+                {activePerson.isDraft ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                    Черновик
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={goBack}
+                  disabled={history.length === 0}
+                  className="rounded-full bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Назад
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-4 text-sm leading-relaxed text-slate-600">
+              {activePerson.shortDescription ||
+                "Здесь можно хранить короткую семейную историю, место жизни, профессию или важную заметку о человеке."}
+            </p>
+
+            {lineage.length > 0 ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {lineage.map((person, index) => (
+                  <React.Fragment key={person.id}>
                     <button
-                      key={option.id}
                       type="button"
-                      onClick={() => setViewMode(option.id)}
-                      className={`rounded-[22px] border px-4 py-4 text-left transition ${
-                        viewMode === option.id
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
+                      onClick={() => focusPerson(person.id, "focus")}
+                      className={`rounded-full px-3 py-2 text-sm ${
+                        person.id === activeId ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
                       }`}
                     >
-                      <div className="text-sm font-semibold">{option.label}</div>
-                      <div className={`mt-1 text-xs leading-relaxed ${viewMode === option.id ? "text-white/75" : "text-slate-500"}`}>
-                        {option.note}
-                      </div>
+                      {person.name}
                     </button>
-                  ))}
-                </div>
+                    {index < lineage.length - 1 ? <span className="text-slate-300">/</span> : null}
+                  </React.Fragment>
+                ))}
+              </div>
+            ) : null}
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFocusDepth((current) => Math.max(1, current - 1))}
-                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                  >
-                    Показать меньше
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFocusDepth((current) => Math.min(5, current + 1))}
-                    className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    Показать больше
-                  </button>
-                </div>
-              </section>
-
-              <RelativeSection
-                title="Родители"
-                accent="#1d4ed8"
-                items={family.parents}
-                emptyLabel="Для этой карточки родители пока не указаны."
-                onSelect={(id) => focusPerson(id, "ancestors")}
-              />
-              <RelativeSection
-                title="Партнеры"
-                accent="#b45309"
-                items={family.partners}
-                emptyLabel="Партнеры пока не указаны."
-                onSelect={(id) => focusPerson(id, "focus")}
-              />
-              <RelativeSection
-                title="Дети"
-                accent="#0f766e"
-                items={family.children}
-                emptyLabel="Для этой карточки дети пока не указаны."
-                onSelect={(id) => focusPerson(id, "descendants")}
-              />
-            </>
-          ) : null}
-
-          <section className="rounded-[32px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-            <div className="text-sm font-semibold text-slate-900">Популярные ветки</div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {branchAnchors.map((person) => (
-                <button
-                  key={person.id}
-                  type="button"
-                  onClick={() => focusPerson(person.id, "focus")}
-                  className={`shrink-0 rounded-full px-4 py-3 text-sm font-medium ${
-                    person.id === activeId ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  {person.label}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <details className="rounded-[32px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-            <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
-              Настроить вид
-            </summary>
-
-            <div className="mt-4 space-y-3">
-              <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                <span>Показывать партнерские связи</span>
-                <input
-                  type="checkbox"
-                  checked={showPartners}
-                  onChange={(event) => setShowPartners(event.target.checked)}
-                  className="h-4 w-4 accent-slate-900"
-                />
-              </label>
-              <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                <span>Показывать черновики</span>
-                <input
-                  type="checkbox"
-                  checked={showPlaceholders}
-                  onChange={(event) => setShowPlaceholders(event.target.checked)}
-                  className="h-4 w-4 accent-slate-900"
-                />
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                {layoutButtons.map((option) => (
+            <div className="mt-5">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Что посмотреть дальше
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {viewButtons.map((option) => (
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => setLayoutDirection(option.id)}
-                    className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
-                      layoutDirection === option.id
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700"
+                    onClick={() => openMapForMode(option.id)}
+                    className={`rounded-[22px] border px-4 py-4 text-left transition ${
+                      viewMode === option.id
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
                     }`}
                   >
-                    {option.label}
+                    <div className="text-sm font-semibold">{option.label}</div>
+                    <div
+                      className={`mt-1 text-xs leading-relaxed ${
+                        viewMode === option.id ? "text-white/78" : "text-slate-500"
+                      }`}
+                    >
+                      {option.note}
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
-          </details>
 
-          <section className="rounded-[32px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditOpen((currentValue) => !currentValue)}
+                className={`flex-1 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                  isEditOpen ? "bg-slate-900 text-white" : "bg-emerald-600 text-white hover:bg-emerald-700"
+                }`}
+              >
+                {isEditOpen ? "Скрыть редактирование" : "Редактировать"}
+              </button>
+              <button
+                type="button"
+                onClick={() => openMapForMode(viewMode)}
+                className="flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                Открыть карту
+              </button>
+            </div>
+          </section>
+
+          <RelativeSection
+            title="Родители"
+            accent="#1d4ed8"
+            items={family.parents}
+            emptyLabel="Для этой карточки родители пока не указаны."
+            onSelect={(personId) => focusPerson(personId, "ancestors")}
+          />
+          <RelativeSection
+            title="Партнеры"
+            accent="#b45309"
+            items={family.partners}
+            emptyLabel="Партнеры пока не добавлены."
+            onSelect={(personId) => focusPerson(personId, "focus")}
+          />
+          <RelativeSection
+            title="Дети"
+            accent="#0f766e"
+            items={family.children}
+            emptyLabel="Для этой карточки дети пока не указаны."
+            onSelect={(personId) => focusPerson(personId, "descendants")}
+          />
+
+          <section className="rounded-[32px] border border-white/80 bg-white/92 p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Редактирование</div>
-                <div className="mt-1 text-xs text-slate-500">Пока только локально, без базы данных</div>
+                <div className="text-sm font-semibold text-slate-950">Редактирование</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Имя, годы жизни, короткое описание и добавление новых людей.
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsEditMode((current) => !current)}
+                onClick={() => setIsEditOpen((currentValue) => !currentValue)}
                 className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                  isEditMode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                  isEditOpen ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
-                {isEditMode ? "Вкл" : "Выкл"}
+                {isEditOpen ? "Вкл" : "Выкл"}
               </button>
             </div>
 
-            {isEditMode ? (
+            {isEditOpen ? (
               <div className="mt-4 space-y-3">
                 <input
-                  value={draftLabel}
-                  onChange={(event) => setDraftLabel(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none"
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
                   placeholder="Имя"
                 />
-                <textarea
-                  value={draftInfo}
-                  onChange={(event) => setDraftInfo(event.target.value)}
-                  rows={4}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none"
-                  placeholder="Краткая заметка"
+                <input
+                  value={draftYearsText}
+                  onChange={(event) => setDraftYearsText(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
+                  placeholder="Годы жизни или приблизительные даты"
                 />
+                <textarea
+                  value={draftShortDescription}
+                  onChange={(event) => setDraftShortDescription(event.target.value)}
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
+                  placeholder="Короткая заметка о человеке"
+                />
+                <input
+                  value={draftPhotoUrl}
+                  onChange={(event) => setDraftPhotoUrl(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
+                  placeholder="Ссылка на фото (необязательно)"
+                />
+
+                <label className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span>Отметить как черновик</span>
+                  <input
+                    type="checkbox"
+                    checked={draftIsDraft}
+                    onChange={(event) => setDraftIsDraft(event.target.checked)}
+                    className="h-4 w-4 accent-slate-900"
+                  />
+                </label>
+
+                {childUnionOptions.length > 0 ? (
+                  <label className="block rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Кому добавить ребенка
+                    </div>
+                    <select
+                      value={childUnionId}
+                      onChange={(event) => setChildUnionId(event.target.value)}
+                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none"
+                    >
+                      {childUnionOptions.map((union) => (
+                        <option key={union.id} value={union.id}>
+                          {getUnionLabel(indexes, union, activeId)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-slate-500">
+                      Сейчас выбран вариант: {selectedUnionLabel}.
+                    </div>
+                  </label>
+                ) : null}
+
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => createRelative("child")}
-                    className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    Добавить ребенка
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => createRelative("partner")}
-                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                  >
-                    Добавить партнера
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={saveDraft}
-                    className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+                    onClick={handleSavePerson}
+                    className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
                   >
                     Сохранить
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setDraftLabel(selectedNode?.label ?? "");
-                      setDraftInfo(selectedNode?.info ?? "");
-                    }}
-                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+                    onClick={resetCurrentDraftFields}
+                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
                   >
-                    Сбросить
+                    Сбросить поля
                   </button>
                 </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddPartner}
+                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Добавить партнера
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddChild}
+                    className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Добавить ребенка
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={removeSelectedNode}
-                  className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"
+                  onClick={handleAddStandalonePerson}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                 >
-                  Удалить карточку локально
+                  Добавить отдельного человека
                 </button>
               </div>
             ) : (
               <p className="mt-4 text-sm leading-relaxed text-slate-500">
-                Редактирование спрятано по умолчанию, чтобы обычным родственникам было проще
-                пользоваться приложением с телефона.
+                Редактирование спрятано по умолчанию, чтобы обычным родственникам было легче
+                пользоваться сайтом с телефона.
               </p>
             )}
           </section>
-        </div>
+      </div>
 
-        <section className="rounded-[32px] border border-white/80 bg-white/90 p-3 shadow-[0_18px_60px_rgba(15,23,42,0.08)] md:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 px-1">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Карта семьи</div>
-              <div className="mt-1 text-xs leading-relaxed text-slate-500">
-                На телефоне карту можно двигать пальцем и масштабировать щипком.
-              </div>
-            </div>
+      {!isDesktop ? (
+        <div className="fixed inset-x-3 bottom-3 z-40 lg:hidden">
+          <div className="grid grid-cols-3 gap-2 rounded-[26px] border border-white/80 bg-white/94 p-2 shadow-[0_18px_60px_rgba(15,23,42,0.18)] backdrop-blur">
             <button
               type="button"
-              onClick={() => flowInstance?.fitView({ duration: 350, padding: 0.22, maxZoom: 1.05 })}
-              className="rounded-full bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+              onClick={goBack}
+              disabled={history.length === 0}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
             >
-              Подогнать
+              Назад
+            </button>
+            <button
+              type="button"
+              onClick={() => openMapForMode(viewMode)}
+              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+            >
+              Карта
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditOpen((currentValue) => !currentValue)}
+              className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+            >
+              Править
             </button>
           </div>
+        </div>
+      ) : null}
 
-          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.96),rgba(242,246,251,0.9)_38%,rgba(234,239,246,0.96)_100%)]">
-            <div className="h-[50vh] min-h-[360px] md:h-[72vh]">
-              <ReactFlow
-                nodes={layoutedNodes}
-                edges={layoutedEdges}
-                nodeTypes={nodeTypes}
-                onInit={setFlowInstance}
-                onNodeClick={(_, node) => focusPerson(node.id, "focus")}
-                fitView
-                panOnDrag
-                zoomOnPinch
-                zoomOnDoubleClick={false}
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable
-                minZoom={0.15}
-                maxZoom={1.8}
-                proOptions={{ hideAttribution: true }}
-              >
-                <Background variant={BackgroundVariant.Dots} color="#b8c3d3" gap={28} size={1} />
-                <Panel position="top-left">
-                  <div className="rounded-full border border-white/70 bg-white/92 px-3 py-2 text-xs text-slate-600 shadow-lg backdrop-blur">
-                    {flowNodes.length} карточек • {layoutedEdges.length} связей • скрыто {graphNodes.length - flowNodes.length}
-                  </div>
-                </Panel>
-                <Panel position="bottom-left">
-                  <div className="max-w-xs rounded-[22px] border border-white/70 bg-white/88 px-4 py-3 text-xs leading-relaxed text-slate-600 shadow-lg backdrop-blur">
-                    Лучший сценарий: найти человека, открыть его ветку и только потом при желании
-                    переходить ко всей карте.
-                  </div>
-                </Panel>
-              </ReactFlow>
-            </div>
-          </div>
-        </section>
-      </div>
+      {isMapOpen ? (
+        <TreeMapCanvas
+          edges={flowEdges}
+          fullscreen
+          layoutDirection={layoutDirection}
+          nodes={flowNodes}
+          onClose={() => setIsMapOpen(false)}
+          onSelect={(personId) => focusPerson(personId, "focus")}
+          selectedName={activePerson.name}
+          viewMode={viewMode}
+        />
+      ) : null}
     </div>
   );
 }
