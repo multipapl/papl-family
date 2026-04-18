@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 # local implementation note BETA_IMPLEMENTATION_SPEC.local.md PERSONAL_BETA_GUIDE.local.md
+
+# brainstorm visual companion
+.superpowers/
