@@ -60,14 +60,14 @@
 4. **Блоки родичів** (дубль графа текстом — доступність і зрозумілість):
    - `Батьки` · `Партнер(ка)` · `Брати й сестри` · `Діти`.
    - Кожний родич — окрема велика кнопка з імʼям (і роками дрібним шрифтом, якщо є).
-   - Порожній блок показує «—» або приховано (визначиться під час реалізації).
+   - Порожні блоки ховаємо у view-mode і показуємо у edit-mode (тільки з кнопкою `＋ Додати`).
 5. **Плаваюча кнопка пошуку** (знизу справа): `🔍` → відкриває overlay.
 
 ## Search overlay
 
 - Повноекранний оверлей.
 - Поле вводу + очищення.
-- Список людей, що підходять (пошук за `name + yearsText + shortDescription`, case-insensitive, нормалізація пробілів).
+- Список людей, що підходять — використовуємо наявний `getPersonSearchIndex` (уже агрегує `name + yearsText + shortDescription`), матчимо за нормалізованим підрядком.
 - Тап на результат → overlay закривається, людина стає фокусом.
 - Кнопка `Закрити` або тап поза полем.
 
@@ -169,7 +169,7 @@ function deletePerson(snapshot: TreeSnapshot, personId: string): TreeSnapshot
 - `src/mappers/jsonToDomain.ts`, `src/mappers/localStorageMapper.ts`
 - `src/repositories/**`
 - `buildTreeIndexes`, `getImmediateFamily`, `getLineagePath`, `getPersonSearchIndex` у `familyGraph.ts`.
-- `RelativeSection.tsx` — косметично оновимо й перевикористаємо.
+- `RelativeSection.tsx` — косметично оновимо й перевикористаємо як реалізацію «Блоків родичів» всередині `PersonScreen`.
 
 ## New components
 
@@ -184,7 +184,7 @@ function deletePerson(snapshot: TreeSnapshot, personId: string): TreeSnapshot
 
 - Тепла палітра (stone/amber), яку вже використовує поточний канвас; великі радіуси, мало тіней.
 - Шрифт — залишити `Cormorant` для заголовків, `Inter`/системний для тіла (як уже в `layout.tsx`).
-- Без емодзі в UI (окрім `✎` і `🔍` — як піктограм). Використати Lucide/Heroicons іконки, якщо не перевантажимо бандл; інакше — SVG вручну (4–5 іконок).
+- Без емодзі в UI. Усі піктограми (✎ редагувати, 🔍 пошук, ← назад, ＋ додати, ✕ видалити, ⚙ налаштування) — інлайн-SVG вручну, без нових npm-залежностей.
 
 ## Non-goals for this iteration
 
@@ -206,7 +206,7 @@ function deletePerson(snapshot: TreeSnapshot, personId: string): TreeSnapshot
 7. Пошук «Роза» → тап на результат → Роза стає фокусом.
 8. У UI немає слів `вузол`, `граф`, `режим`, `edge`, `node`.
 9. На екрані 360×740 усе читабельно без горизонтального скролу загалом (крім одного ряду mini-graph).
-10. `npm run build && npm run start` працює локально; `next export` видає статичний `out/`.
+10. `npm run build` працює локально і завдяки `output: "export"` у `next.config.ts` генерує статичний `out/`.
 
 ## Risks & open questions
 
