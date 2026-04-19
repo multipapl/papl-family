@@ -18,8 +18,8 @@ type SimpleEdge = {
   type: "partner" | "parent-child";
 };
 
-const NODE_W = 80;
-const NODE_H = 80;
+const NODE_W = 180;
+const NODE_H = 60;
 
 export function computeTreeLayout(
   nodes: SimpleNode[],
@@ -32,8 +32,8 @@ export function computeTreeLayout(
     align: "UL",
     marginx: 40,
     marginy: 40,
-    nodesep: 50,
-    ranksep: 100,
+    nodesep: 30,
+    ranksep: 80,
   });
 
   for (const node of nodes) {

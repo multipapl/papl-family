@@ -32,8 +32,8 @@ type Props = {
 };
 
 // ── Constants ──────────────────────────────────────────────────────
-const NODE_RADIUS = 28;
-const PARTNER_GAP = 12;
+const CARD_W = 160;
+const CARD_H = 48;
 
 // ── Helpers ────────────────────────────────────────────────────────
 function getInitials(name: string) {
@@ -75,7 +75,7 @@ function buildConnectorPath(
 
   // Orthogonal parent→child: down from parent, horizontal, down to child
   const midY = sy + (ty - sy) * 0.45;
-  return `M ${sx} ${sy + NODE_RADIUS} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty - NODE_RADIUS}`;
+  return `M ${sx} ${sy + CARD_H / 2} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty - CARD_H / 2}`;
 }
 
 // ── Component ─────��────────────────────────────────────────────────
@@ -111,10 +111,10 @@ export default function FamilyTreeCanvas({
       maxY = -Infinity;
 
     for (const n of nodes) {
-      minX = Math.min(minX, n.x - NODE_RADIUS);
-      maxX = Math.max(maxX, n.x + NODE_RADIUS);
-      minY = Math.min(minY, n.y - NODE_RADIUS);
-      maxY = Math.max(maxY, n.y + NODE_RADIUS);
+      minX = Math.min(minX, n.x - CARD_W / 2);
+      maxX = Math.max(maxX, n.x + CARD_W / 2);
+      minY = Math.min(minY, n.y - CARD_H / 2);
+      maxY = Math.max(maxY, n.y + CARD_H / 2);
     }
 
     const treeW = maxX - minX + 80;
@@ -237,6 +237,25 @@ export default function FamilyTreeCanvas({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-stone-50 via-amber-50/30 to-stone-100">
+      {/* Generation filter */}
+      <div className="absolute left-3 top-3 z-20 flex items-center gap-2 rounded-full bg-white/90 px-3 py-1.5 shadow-md backdrop-blur-sm border border-stone-200">
+        <span className="text-xs font-medium text-stone-600">Поколения:</span>
+        {[3, 4, 5, 99].map(gen => (
+          <button
+            key={gen}
+            type="button"
+            onClick={() => onMaxGenerationChange(gen)}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              maxGeneration === gen
+                ? "bg-stone-800 text-white"
+                : "text-stone-500 hover:bg-stone-100"
+            }`}
+          >
+            {gen === 99 ? "все" : gen}
+          </button>
+        ))}
+      </div>
+
       {/* Canvas */}
       <div
         ref={containerRef}
@@ -274,6 +293,9 @@ export default function FamilyTreeCanvas({
               const isActive =
                 edge.sourceId === selectedId || edge.targetId === selectedId;
 
+              const hasHighlight = highlightedIds.size > 0;
+              const edgeInBranch = !hasHighlight || (highlightedIds.has(edge.sourceId) && highlightedIds.has(edge.targetId));
+
               return (
                 <path
                   key={`${edge.sourceId}-${edge.targetId}-${edge.type}`}
@@ -296,7 +318,8 @@ export default function FamilyTreeCanvas({
                   }
                   strokeWidth={isActive ? 2.5 : 1.5}
                   strokeDasharray={isPartner ? "6 4" : "none"}
-                  opacity={isActive ? 1 : 0.6}
+                  opacity={edgeInBranch ? (isActive ? 1 : 0.6) : 0.08}
+                  style={{ transition: "opacity 0.3s" }}
                 />
               );
             })}
@@ -304,68 +327,51 @@ export default function FamilyTreeCanvas({
 
           {/* Nodes layer */}
           {nodes.map((node) => {
+            const hasHighlight = highlightedIds.size > 0;
+            const isHighlighted = highlightedIds.has(node.id);
             const isSelected = node.id === selectedId;
+            const nodeOpacity = hasHighlight && !isHighlighted && !isSelected ? 0.15 : 1;
 
             return (
               <div
                 key={node.id}
                 className="absolute"
                 style={{
-                  left: node.x - NODE_RADIUS,
-                  top: node.y - NODE_RADIUS,
-                  width: NODE_RADIUS * 2,
+                  left: node.x - 80,
+                  top: node.y - 24,
+                  width: 160,
+                  opacity: nodeOpacity,
+                  transition: "opacity 0.3s",
                 }}
               >
-                {/* Circle */}
-                <button
-                  type="button"
+                <div
+                  className={`flex items-center gap-2 rounded-lg border-2 bg-white px-3 py-2 shadow-sm cursor-pointer transition-all duration-200 ${
+                    isSelected
+                      ? "border-amber-500 shadow-lg shadow-amber-200/50 scale-105"
+                      : "border-stone-200 hover:border-stone-300 hover:shadow-md"
+                  }`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelect(node.id);
                   }}
-                  className={`mx-auto flex items-center justify-center rounded-full text-white font-bold transition-all duration-200 ${
-                    isSelected
-                      ? "ring-4 ring-white shadow-lg scale-110"
-                      : "shadow-md hover:scale-105"
-                  }`}
-                  style={{
-                    width: NODE_RADIUS * 2,
-                    height: NODE_RADIUS * 2,
-                    backgroundColor: node.accent,
-                    fontSize: NODE_RADIUS * 0.55,
-                  }}
                 >
-                  {getInitials(node.name)}
-                </button>
-
-                {/* Name label */}
-                <div
-                  className={`mt-1 text-center leading-tight ${
-                    isSelected
-                      ? "font-bold text-slate-900"
-                      : "font-medium text-slate-700"
-                  }`}
-                  style={{
-                    fontSize: 11,
-                    width: NODE_RADIUS * 3,
-                    marginLeft: -(NODE_RADIUS * 0.5),
-                  }}
-                >
-                  {node.name}
-                </div>
-
-                {node.yearsText ? (
                   <div
-                    className="text-center text-slate-400"
-                    style={{
-                      fontSize: 9,
-                      width: NODE_RADIUS * 3,
-                      marginLeft: -(NODE_RADIUS * 0.5),
-                    }}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                    style={{ backgroundColor: node.accent }}
                   >
-                    {node.yearsText}
+                    {getInitials(node.name)}
                   </div>
-                ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-stone-800">
+                      {node.name}
+                    </div>
+                    {node.yearsText && (
+                      <div className="truncate text-[10px] text-stone-400">
+                        {node.yearsText}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
