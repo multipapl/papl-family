@@ -330,3 +330,38 @@ export function getUnionLabel(indexes: TreeIndexes, union: Union, activePersonId
 export function getPersonSearchIndex(person: Person) {
   return `${person.name} ${person.yearsText} ${person.shortDescription}`.toLocaleLowerCase();
 }
+
+/** All ancestors + all descendants + their partners for a given person. */
+export function getBranchIds(indexes: TreeIndexes, personId: string): Set<string> {
+  const branch = new Set<string>();
+
+  // Walk up: all ancestors
+  const walkUp = (id: string) => {
+    if (branch.has(id)) return;
+    branch.add(id);
+    for (const parentId of indexes.parentIdsByPersonId.get(id) ?? []) {
+      walkUp(parentId);
+    }
+  };
+  walkUp(personId);
+
+  // Walk down: all descendants
+  const walkDown = (id: string) => {
+    if (branch.has(id)) return;
+    branch.add(id);
+    for (const childId of indexes.childIdsByPersonId.get(id) ?? []) {
+      walkDown(childId);
+    }
+  };
+  walkDown(personId);
+
+  // Add partners of everyone in branch
+  const withPartners = new Set(branch);
+  for (const id of branch) {
+    for (const partnerId of indexes.partnerIdsByPersonId.get(id) ?? []) {
+      withPartners.add(partnerId);
+    }
+  }
+
+  return withPartners;
+}
