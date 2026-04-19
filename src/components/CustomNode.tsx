@@ -28,13 +28,13 @@ export default function CustomNode({ data }: NodeProps<NodeData>) {
 
   return (
     <div
-      className={`group relative w-[264px] overflow-hidden rounded-[24px] border bg-white/96 p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] backdrop-blur transition-all duration-200 ${
+      className={`group relative w-[240px] overflow-hidden rounded-2xl border bg-white p-3 shadow-md transition-all duration-200 ${
         data.isSelected
-          ? "border-slate-900 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
-          : "border-slate-200/85 hover:-translate-y-0.5 hover:border-slate-300"
+          ? "border-slate-900 shadow-lg"
+          : "border-slate-200 hover:border-slate-300"
       }`}
     >
-      <div className="absolute inset-x-0 top-0 h-1.5" style={{ backgroundColor: data.accent }} />
+      <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: data.accent }} />
 
       <Handle
         type="target"
@@ -42,51 +42,29 @@ export default function CustomNode({ data }: NodeProps<NodeData>) {
         className="!h-3 !w-3 !border-2 !border-white !bg-slate-400"
       />
 
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5">
         <div
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold text-white"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
           style={{ backgroundColor: data.accent }}
         >
           {getInitials(data.name) || "?"}
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-              Поколение {data.generation + 1}
-            </div>
-            {data.isDraft ? (
-              <div className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
-                Черновик
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-1 line-clamp-2 text-[17px] font-semibold leading-tight text-slate-950">
+          <div className="line-clamp-2 text-base font-bold leading-tight text-slate-950">
             {data.name}
           </div>
-
-          <div className="mt-1 min-h-5 text-[12px] font-medium text-slate-500">
-            {data.yearsText || "Годы пока не указаны"}
+          <div className="mt-0.5 text-sm text-slate-500">
+            {data.yearsText || ""}
           </div>
         </div>
       </div>
 
-      <div className="mt-3 min-h-10 text-[13px] leading-relaxed text-slate-600">
-        {data.shortDescription || "Короткое описание пока не заполнено."}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-500">
-        <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
-          <div className="uppercase tracking-[0.18em] text-slate-400">Партнеры</div>
-          <div className="mt-1 text-sm font-semibold text-slate-800">{data.partnersCount}</div>
+      {data.shortDescription ? (
+        <div className="mt-2 line-clamp-2 text-sm leading-snug text-slate-600">
+          {data.shortDescription}
         </div>
-
-        <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
-          <div className="uppercase tracking-[0.18em] text-slate-400">Дети</div>
-          <div className="mt-1 text-sm font-semibold text-slate-800">{data.childrenCount}</div>
-        </div>
-      </div>
+      ) : null}
 
       <Handle
         type="source"

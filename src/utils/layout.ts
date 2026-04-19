@@ -1,69 +1,63 @@
 import dagre from "dagre";
-import { Edge, Node, Position } from "reactflow";
 
 export type LayoutDirection = "TB" | "LR";
 
-const nodeWidth = 264;
-const nodeHeight = 176;
+export type PositionedNode = {
+  id: string;
+  x: number;
+  y: number;
+};
 
-export const getLayoutedElements = (
-  nodes: Node[],
-  edges: Edge[],
-  direction: LayoutDirection = "TB"
-) => {
+type SimpleNode = {
+  id: string;
+};
+
+type SimpleEdge = {
+  source: string;
+  target: string;
+  type: "partner" | "parent-child";
+};
+
+const NODE_W = 80;
+const NODE_H = 80;
+
+export function computeTreeLayout(
+  nodes: SimpleNode[],
+  edges: SimpleEdge[]
+): Map<string, { x: number; y: number }> {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
   graph.setGraph({
-    rankdir: direction,
+    rankdir: "TB",
     align: "UL",
-    marginx: 48,
-    marginy: 48,
-    nodesep: direction === "TB" ? 34 : 48,
-    ranksep: direction === "TB" ? 104 : 138,
+    marginx: 40,
+    marginy: 40,
+    nodesep: 50,
+    ranksep: 100,
   });
 
-  nodes.forEach((node) => {
-    graph.setNode(node.id, {
-      width: nodeWidth,
-      height: nodeHeight,
-    });
-  });
+  for (const node of nodes) {
+    graph.setNode(node.id, { width: NODE_W, height: NODE_H });
+  }
 
-  edges.forEach((edge) => {
-    const relationship =
-      edge.data && typeof edge.data === "object"
-        ? Reflect.get(edge.data, "relationship")
-        : undefined;
-    const isPartner = relationship === "partner";
-
+  for (const edge of edges) {
+    const isPartner = edge.type === "partner";
     graph.setEdge(edge.source, edge.target, {
       minlen: isPartner ? 1 : 2,
-      weight: isPartner ? 8 : 3,
+      weight: isPartner ? 10 : 3,
     });
-  });
+  }
 
   dagre.layout(graph);
 
-  const targetPosition = direction === "TB" ? Position.Top : Position.Left;
-  const sourcePosition = direction === "TB" ? Position.Bottom : Position.Right;
+  const positions = new Map<string, { x: number; y: number }>();
 
-  const layoutedNodes = nodes.map((node) => {
-    const positioned = graph.node(node.id);
+  for (const node of nodes) {
+    const pos = graph.node(node.id);
+    if (pos) {
+      positions.set(node.id, { x: pos.x, y: pos.y });
+    }
+  }
 
-    return {
-      ...node,
-      targetPosition,
-      sourcePosition,
-      data: {
-        ...node.data,
-        direction,
-      },
-      position: {
-        x: positioned.x - nodeWidth / 2,
-        y: positioned.y - nodeHeight / 2,
-      },
-    };
-  });
-
-  return { nodes: layoutedNodes, edges };
-};
+  return positions;
+}

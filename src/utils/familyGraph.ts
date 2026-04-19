@@ -347,9 +347,9 @@ export function getBranchIds(indexes: TreeIndexes, personId: string): Set<string
 
   // Walk down: all descendants
   const walkDown = (id: string) => {
-    if (branch.has(id)) return;
-    branch.add(id);
     for (const childId of indexes.childIdsByPersonId.get(id) ?? []) {
+      if (branch.has(childId)) continue;
+      branch.add(childId);
       walkDown(childId);
     }
   };
