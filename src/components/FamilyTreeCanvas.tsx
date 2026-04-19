@@ -130,7 +130,7 @@ export default function FamilyTreeCanvas({
     setScale(fitScale);
     setTx(rect.width / 2 - centerX * fitScale);
     setTy(rect.height / 2 - centerY * fitScale);
-  }, [nodes]);
+  }, [nodes.length]);
 
   // ── Touch handlers ─────────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -210,24 +210,30 @@ export default function FamilyTreeCanvas({
     mouseDown.current = false;
   }, []);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      e.preventDefault();
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
+  // ── Imperative wheel handler (passive: false) ────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const newScale = clamp(scale * factor, 0.1, 3);
-      const ratio = newScale / scale;
 
-      setTx((prev) => cx - ratio * (cx - prev));
-      setTy((prev) => cy - ratio * (cy - prev));
-      setScale(newScale);
-    },
-    [scale]
-  );
+      setScale(prev => {
+        const newScale = clamp(prev * factor, 0.1, 3);
+        const ratio = newScale / prev;
+        setTx(t => cx - ratio * (cx - t));
+        setTy(t => cy - ratio * (cy - t));
+        return newScale;
+      });
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Node map for quick lookup
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
@@ -268,7 +274,6 @@ export default function FamilyTreeCanvas({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
       >
         <div
           style={{

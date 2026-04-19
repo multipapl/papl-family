@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, startTransition } from "react";
+import { useEffect, useMemo, useState, startTransition } from "react";
 
 import type { TreeSnapshot } from "@/domain/familyTree";
 import {
@@ -82,70 +82,72 @@ export default function FamilyTree() {
     );
   }
 
-  const indexes = buildTreeIndexes(snapshot);
+  const indexes = useMemo(() => buildTreeIndexes(snapshot), [snapshot]);
 
-  const totalGenerations = Math.max(...[...indexes.generationByPersonId.values()], 0);
-  const highlightedIds = selectedId ? getBranchIds(indexes, selectedId) : new Set<string>();
+  const { treeNodes, treeEdges, totalGenerations } = useMemo(() => {
+    // Build layout edges
+    const layoutEdges: { source: string; target: string; type: "partner" | "parent-child" }[] = [];
 
-  // Build simple edges for layout
-  const layoutEdges: { source: string; target: string; type: "partner" | "parent-child" }[] = [];
+    for (const union of snapshot.unions) {
+      for (let i = 0; i < union.partnerIds.length; i++) {
+        for (let j = i + 1; j < union.partnerIds.length; j++) {
+          layoutEdges.push({
+            source: union.partnerIds[i],
+            target: union.partnerIds[j],
+            type: "partner",
+          });
+        }
+      }
+    }
 
-  for (const union of snapshot.unions) {
-    for (let i = 0; i < union.partnerIds.length; i++) {
-      for (let j = i + 1; j < union.partnerIds.length; j++) {
+    for (const rel of snapshot.parentChildRelations) {
+      const union = indexes.unionById.get(rel.unionId);
+      if (!union) continue;
+      for (const parentId of union.partnerIds) {
         layoutEdges.push({
-          source: union.partnerIds[i],
-          target: union.partnerIds[j],
-          type: "partner",
+          source: parentId,
+          target: rel.childId,
+          type: "parent-child",
         });
       }
     }
-  }
 
-  for (const rel of snapshot.parentChildRelations) {
-    const union = indexes.unionById.get(rel.unionId);
-    if (!union) continue;
+    // Compute positions
+    const simpleNodes = snapshot.people.map((p) => ({ id: p.id }));
+    const positions = computeTreeLayout(simpleNodes, layoutEdges);
 
-    for (const parentId of union.partnerIds) {
-      layoutEdges.push({
-        source: parentId,
-        target: rel.childId,
-        type: "parent-child",
-      });
-    }
-  }
+    // Build canvas nodes
+    const nodes: TreeNode[] = snapshot.people
+      .map((person) => {
+        const pos = positions.get(person.id);
+        if (!pos) return null;
+        const gen = indexes.generationByPersonId.get(person.id) ?? 0;
+        return {
+          id: person.id,
+          name: person.name,
+          yearsText: person.yearsText,
+          shortDescription: person.shortDescription,
+          generation: gen,
+          x: pos.x,
+          y: pos.y,
+          accent: accents[gen % accents.length],
+        };
+      })
+      .filter((n): n is TreeNode => n !== null);
 
-  // Compute positions
-  const simpleNodes = snapshot.people.map((p) => ({ id: p.id }));
-  const positions = computeTreeLayout(simpleNodes, layoutEdges);
+    // Build canvas edges
+    const edges: TreeEdge[] = layoutEdges.map((e) => ({
+      sourceId: e.source,
+      targetId: e.target,
+      type: e.type,
+    }));
 
-  // Build canvas nodes
-  const treeNodes: TreeNode[] = snapshot.people
-    .map((person) => {
-      const pos = positions.get(person.id);
-      if (!pos) return null;
+    const total = Math.max(...[...indexes.generationByPersonId.values()], 0);
 
-      const gen = indexes.generationByPersonId.get(person.id) ?? 0;
+    return { treeNodes: nodes, treeEdges: edges, totalGenerations: total };
+  }, [snapshot, indexes]);
 
-      return {
-        id: person.id,
-        name: person.name,
-        yearsText: person.yearsText,
-        shortDescription: person.shortDescription,
-        generation: gen,
-        x: pos.x,
-        y: pos.y,
-        accent: accents[gen % accents.length],
-      };
-    })
-    .filter((n): n is TreeNode => n !== null);
-
-  // Build canvas edges
-  const treeEdges: TreeEdge[] = layoutEdges.map((e) => ({
-    sourceId: e.source,
-    targetId: e.target,
-    type: e.type,
-  }));
+  const highlightedIds = selectedId ? getBranchIds(indexes, selectedId) : new Set<string>();
 
   const visibleNodes = treeNodes.filter(n => n.generation <= maxGeneration);
   const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
