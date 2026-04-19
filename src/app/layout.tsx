@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Manrope } from "next/font/google";
+import { Manrope } from "next/font/google";
+
 import "./globals.css";
 
 const manrope = Manrope({
@@ -7,15 +8,9 @@ const manrope = Manrope({
   subsets: ["latin", "cyrillic"],
 });
 
-const cormorant = Cormorant_Garamond({
-  variable: "--font-cormorant",
-  subsets: ["latin", "cyrillic"],
-  weight: ["500", "600", "700"],
-});
-
 export const metadata: Metadata = {
-  title: "Family Archive",
-  description: "Семейное дерево с поиском, карточками людей и локальным сохранением изменений.",
+  title: "Семейное дерево",
+  description: "Простой редактор семейного дерева с русским интерфейсом.",
 };
 
 export default function RootLayout({
@@ -25,9 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className={`${manrope.variable} ${cormorant.variable} antialiased`}>
-        {children}
-      </body>
+      <body className={`${manrope.variable} antialiased`}>{children}</body>
     </html>
   );
 }

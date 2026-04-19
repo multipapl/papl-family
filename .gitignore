@@ -47,9 +47,8 @@ CLAUDE.local.md
 task.md
 .claude/
 
-# documentation
-docs/
-PROJECT_GUIDE.md
-
 # brainstorm visual companion
 .superpowers/
+
+# local manual editor data
+.local/

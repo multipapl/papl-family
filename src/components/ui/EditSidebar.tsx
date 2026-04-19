@@ -1,0 +1,194 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+import {
+  findMatchingBranch,
+  getPersonName,
+  getUnionPartners,
+} from "@/domain/treeQueries";
+import type { Branch, Person, TreeIndexes, TreeSnapshot } from "@/domain/types";
+
+type Props = {
+  indexes: TreeIndexes;
+  onClose: () => void;
+  onDelete: (personId: string) => void;
+  onSave: (person: Person) => void;
+  person: Person | null;
+  snapshot: TreeSnapshot;
+};
+
+type DateParts = {
+  day: string;
+  month: string;
+  year: string;
+};
+
+function splitDate(value?: string): DateParts {
+  const cleaned = value?.replace(/^~/, "") ?? "";
+  const [year = "", month = "", day = ""] = cleaned.split("-");
+  return { day, month, year };
+}
+
+function joinDate(parts: DateParts) {
+  const year = parts.year.trim();
+  const month = parts.month.trim().padStart(2, "0");
+  const day = parts.day.trim().padStart(2, "0");
+
+  if (!year) return undefined;
+  if (!parts.month.trim()) return year;
+  if (!parts.day.trim()) return `${year}-${month}`;
+  return `${year}-${month}-${day}`;
+}
+
+export default function EditSidebar({ indexes, onClose, onDelete, onSave, person, snapshot }: Props) {
+  const [draft, setDraft] = useState<Person | null>(person);
+  const [birth, setBirth] = useState<DateParts>(splitDate(person?.birthDate));
+  const [death, setDeath] = useState<DateParts>(splitDate(person?.deathDate));
+
+  const unions = useMemo(() => {
+    if (!draft) return [];
+    return (indexes.unionIdsByPersonId.get(draft.id) ?? [])
+      .map((id) => indexes.unionById.get(id))
+      .filter((union): union is NonNullable<typeof union> => Boolean(union));
+  }, [draft, indexes.unionById, indexes.unionIdsByPersonId]);
+
+  if (!draft) return null;
+
+  const branchSuggestion = findMatchingBranch(snapshot.branches, draft);
+
+  function update(patch: Partial<Person>) {
+    setDraft((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function save() {
+    const deathDate = joinDate(death);
+    onSave({
+      ...draft!,
+      birthDate: joinDate(birth),
+      deathDate,
+      isDeceased: Boolean(draft!.isDeceased || deathDate),
+      surname: draft!.surname?.trim() || undefined,
+      maidenName: draft!.maidenName?.trim() || undefined,
+      note: draft!.note?.trim() || undefined,
+      branchId: draft!.branchId || undefined,
+      primaryUnionId: draft!.primaryUnionId || undefined,
+    });
+  }
+
+  return (
+    <aside className="absolute bottom-0 right-0 top-0 z-50 w-full max-w-md overflow-y-auto border-l border-stone-200 bg-white p-5 shadow-2xl">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-xl font-bold text-slate-950">Редактирование</h2>
+        <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full bg-stone-100 text-xl font-bold">
+          ×
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Имя</span>
+          <input value={draft.givenName} onChange={(event) => update({ givenName: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2" />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Фамилия</span>
+          <input value={draft.surname ?? ""} onChange={(event) => update({ surname: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2" />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Девичья фамилия</span>
+          <input value={draft.maidenName ?? ""} onChange={(event) => update({ maidenName: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2" />
+        </label>
+
+        <fieldset>
+          <legend className="text-sm font-semibold text-slate-700">Пол</legend>
+          <div className="mt-2 flex gap-2">
+            {[
+              ["male", "Мужчина"],
+              ["female", "Женщина"],
+            ].map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2">
+                <input type="radio" checked={draft.gender === value} onChange={() => update({ gender: value as Person["gender"] })} />
+                {label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <DateFields label="Дата рождения" parts={birth} setParts={setBirth} />
+        <DateFields label="Дата смерти" parts={death} setParts={setDeath} />
+
+        <label className="flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2">
+          <input type="checkbox" checked={Boolean(draft.isDeceased)} onChange={(event) => update({ isDeceased: event.target.checked })} />
+          Умер/умерла
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Заметка</span>
+          <textarea value={draft.note ?? ""} onChange={(event) => update({ note: event.target.value })} className="mt-1 min-h-24 w-full rounded-lg border border-stone-300 px-3 py-2" />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Ветвь</span>
+          <select value={draft.branchId ?? ""} onChange={(event) => update({ branchId: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2">
+            <option value="">Не указано</option>
+            {snapshot.branches.map((branch: Branch) => (
+              <option key={branch.id} value={branch.id}>{branch.name}</option>
+            ))}
+          </select>
+        </label>
+
+        {branchSuggestion && branchSuggestion.id !== draft.branchId ? (
+          <button type="button" onClick={() => update({ branchId: branchSuggestion.id })} className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+            Назначить ветвь: {branchSuggestion.name}
+          </button>
+        ) : null}
+
+        {unions.length > 1 ? (
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-700">Основной партнер</span>
+            <select value={draft.primaryUnionId ?? ""} onChange={(event) => update({ primaryUnionId: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2">
+              <option value="">Автоматически</option>
+              {unions.map((union) => (
+                <option key={union.id} value={union.id}>
+                  {getUnionPartners(indexes, union, draft.id).map(getPersonName).join(", ") || "Без партнера"}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={save} className="flex-1 rounded-lg bg-slate-950 px-4 py-3 font-bold text-white">
+            Сохранить
+          </button>
+          <button type="button" onClick={() => onDelete(draft.id)} className="rounded-lg bg-rose-50 px-4 py-3 font-bold text-rose-800">
+            Удалить
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function DateFields({
+  label,
+  parts,
+  setParts,
+}: {
+  label: string;
+  parts: DateParts;
+  setParts: (parts: DateParts) => void;
+}) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-semibold text-slate-700">{label}</legend>
+      <div className="mt-1 grid grid-cols-3 gap-2">
+        <input aria-label="День" placeholder="день" value={parts.day} onChange={(event) => setParts({ ...parts, day: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
+        <input aria-label="Месяц" placeholder="месяц" value={parts.month} onChange={(event) => setParts({ ...parts, month: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
+        <input aria-label="Год" placeholder="год" value={parts.year} onChange={(event) => setParts({ ...parts, year: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
+      </div>
+    </fieldset>
+  );
+}

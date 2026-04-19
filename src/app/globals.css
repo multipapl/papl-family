@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #eef2f6;
-  --foreground: #0f172a;
+  --background: #101413;
+  --foreground: #e6ece8;
+  --panel: #19211f;
+  --panel-soft: #202a27;
+  --panel-strong: #26322e;
+  --line: #35433f;
+  --muted: #a7b4ae;
+  --muted-strong: #c7d1cc;
+  --accent: #62c7d8;
+  --danger: #f08a9a;
 }
 
 @theme inline {
@@ -20,17 +28,114 @@ body {
   height: 100%;
 }
 
+.bg-\[\#f7f3ec\] {
+  background-color: var(--background) !important;
+}
+
+.bg-white,
+.bg-white\/90 {
+  background-color: color-mix(in srgb, var(--panel) 92%, transparent) !important;
+}
+
+.bg-stone-50,
+.bg-stone-100 {
+  background-color: var(--panel-soft) !important;
+}
+
+.bg-emerald-50 {
+  background-color: #172c25 !important;
+}
+
+.bg-rose-50 {
+  background-color: #2c1a20 !important;
+}
+
+.bg-amber-200 {
+  background-color: #4c3821 !important;
+}
+
+.bg-slate-900,
+.bg-slate-950 {
+  background-color: #d7e7df !important;
+}
+
+.text-slate-950,
+.text-slate-900,
+.text-slate-800,
+.text-slate-700 {
+  color: var(--foreground) !important;
+}
+
+.text-slate-600,
+.text-slate-500,
+.text-stone-500,
+.text-stone-400 {
+  color: var(--muted) !important;
+}
+
+.text-white {
+  color: #101413 !important;
+}
+
+.text-emerald-900,
+.text-emerald-800,
+.text-emerald-700 {
+  color: #bfe7d4 !important;
+}
+
+.text-rose-800 {
+  color: var(--danger) !important;
+}
+
+.text-amber-900,
+.text-amber-800 {
+  color: #f0c27a !important;
+}
+
+.border-stone-200,
+.border-stone-300,
+.border-emerald-200 {
+  border-color: var(--line) !important;
+}
+
+input,
+textarea,
+select {
+  background-color: #121816;
+  border-color: var(--line) !important;
+  color: var(--foreground);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #74827c;
+}
+
+button {
+  color: inherit;
+}
+
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.96), transparent 28%),
-    linear-gradient(180deg, #f4f7fb 0%, #edf1f7 52%, #e6ebf2 100%);
+  background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-manrope), sans-serif;
+  font-family: var(--font-manrope), system-ui, sans-serif;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
