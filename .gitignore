@@ -40,7 +40,16 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local implementation note BETA_IMPLEMENTATION_SPEC.local.md PERSONAL_BETA_GUIDE.local.md
+# local docs / AI assistant files
+*.local.md
+CLAUDE.md
+CLAUDE.local.md
+task.md
+.claude/
+
+# documentation
+docs/
+PROJECT_GUIDE.md
 
 # brainstorm visual companion
 .superpowers/
