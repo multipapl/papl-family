@@ -8,6 +8,7 @@ import {
 } from "@/repositories/browserFamilyTreeRepository";
 import {
   buildTreeIndexes,
+  getBranchIds,
 } from "@/utils/familyGraph";
 import { computeTreeLayout } from "@/utils/layout";
 
@@ -30,6 +31,7 @@ function getDefaultPerson(snapshot: TreeSnapshot | null) {
 export default function FamilyTree() {
   const [snapshot, setSnapshot] = useState<TreeSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState("");
+  const [maxGeneration, setMaxGeneration] = useState(99);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -49,7 +51,7 @@ export default function FamilyTree() {
           setSelectedId(person?.id ?? "");
         });
       } catch {
-        if (!cancelled) setErrorMessage("Не вдалося завантажити дерево.");
+        if (!cancelled) setErrorMessage("Не удалось загрузить дерево.");
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -81,6 +83,9 @@ export default function FamilyTree() {
   }
 
   const indexes = buildTreeIndexes(snapshot);
+
+  const totalGenerations = Math.max(...[...indexes.generationByPersonId.values()], 0);
+  const highlightedIds = selectedId ? getBranchIds(indexes, selectedId) : new Set<string>();
 
   // Build simple edges for layout
   const layoutEdges: { source: string; target: string; type: "partner" | "parent-child" }[] = [];
@@ -142,13 +147,21 @@ export default function FamilyTree() {
     type: e.type,
   }));
 
+  const visibleNodes = treeNodes.filter(n => n.generation <= maxGeneration);
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = treeEdges.filter(e => visibleNodeIds.has(e.sourceId) && visibleNodeIds.has(e.targetId));
+
   return (
     <div className="h-screen w-screen">
       <FamilyTreeCanvas
-        nodes={treeNodes}
-        edges={treeEdges}
+        nodes={visibleNodes}
+        edges={visibleEdges}
         selectedId={selectedId}
         onSelect={setSelectedId}
+        highlightedIds={highlightedIds}
+        maxGeneration={maxGeneration}
+        onMaxGenerationChange={setMaxGeneration}
+        totalGenerations={totalGenerations}
       />
     </div>
   );
