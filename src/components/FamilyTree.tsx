@@ -61,30 +61,16 @@ export default function FamilyTree() {
     return () => { cancelled = true; };
   }, []);
 
-  if (isLoading || !snapshot) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-stone-50">
-        <div className="text-center">
-          <h1 className="font-[family-name:var(--font-cormorant)] text-3xl text-stone-800">
-            Семейное дерево
-          </h1>
-          <p className="mt-2 text-base text-stone-500">Загружаем...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-stone-50">
-        <p className="text-lg text-rose-700">{errorMessage}</p>
-      </div>
-    );
-  }
-
-  const indexes = useMemo(() => buildTreeIndexes(snapshot), [snapshot]);
+  const indexes = useMemo(
+    () => (snapshot ? buildTreeIndexes(snapshot) : null),
+    [snapshot],
+  );
 
   const { treeNodes, treeEdges, totalGenerations } = useMemo(() => {
+    if (!snapshot || !indexes) {
+      return { treeNodes: [] as TreeNode[], treeEdges: [] as TreeEdge[], totalGenerations: 0 };
+    }
+
     // Build layout edges
     const layoutEdges: { source: string; target: string; type: "partner" | "parent-child" }[] = [];
 
@@ -146,6 +132,27 @@ export default function FamilyTree() {
 
     return { treeNodes: nodes, treeEdges: edges, totalGenerations: total };
   }, [snapshot, indexes]);
+
+  if (isLoading || !snapshot || !indexes) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-stone-50">
+        <div className="text-center">
+          <h1 className="font-[family-name:var(--font-cormorant)] text-3xl text-stone-800">
+            Семейное дерево
+          </h1>
+          <p className="mt-2 text-base text-stone-500">Загружаем...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-stone-50">
+        <p className="text-lg text-rose-700">{errorMessage}</p>
+      </div>
+    );
+  }
 
   const highlightedIds = selectedId ? getBranchIds(indexes, selectedId) : new Set<string>();
 
