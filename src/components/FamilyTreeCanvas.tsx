@@ -337,9 +337,9 @@ export default function FamilyTreeCanvas({
                 key={node.id}
                 className="absolute"
                 style={{
-                  left: node.x - 80,
-                  top: node.y - 24,
-                  width: 160,
+                  left: node.x - CARD_W / 2,
+                  top: node.y - CARD_H / 2,
+                  width: CARD_W,
                   opacity: nodeOpacity,
                   transition: "opacity 0.3s",
                 }}
