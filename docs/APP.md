@@ -30,6 +30,7 @@ The current approach is intentionally manual. GEDCOM import, automatic layout, a
 - Collapse controls show when ancestors or descendants are hidden.
 - The branch filter is a dropdown.
 - There are no default branches: users create branches themselves.
+- The minimap is shown on tablet/desktop widths and hidden on mobile.
 
 ## Person Data
 
@@ -95,6 +96,7 @@ Required environment variables:
 UPSTASH_REDIS_REST_URL
 UPSTASH_REDIS_REST_TOKEN
 EDIT_SECRET
+BLOB_READ_WRITE_TOKEN
 ```
 
 The server also accepts the legacy `KV_REST_API_URL` and `KV_REST_API_TOKEN` names for migrated Vercel KV stores.
@@ -109,6 +111,10 @@ Open production edit mode with:
 ```text
 https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET
 ```
+
+The value after `?edit=` must exactly match the Vercel `EDIT_SECRET` environment variable. The local `dev` secret is not valid on Vercel.
+
+After changing any Vercel environment variable, redeploy the project before testing.
 
 ## Photo Storage
 
@@ -130,6 +136,17 @@ The upload flow is:
 6. The user saves the person to persist `photoUrl` in the tree snapshot.
 
 The upload token route is `/api/photos/upload`. It requires the edit token and limits uploaded optimized files to `512 KB`.
+
+## Vercel Deployment Setup
+
+1. Install an Upstash Redis integration from the Vercel Marketplace and connect it to this project.
+2. Confirm the project has `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+3. Create a Vercel Blob store and confirm the project has `BLOB_READ_WRITE_TOKEN`.
+4. Add a strong `EDIT_SECRET`.
+5. Redeploy the project after all environment variables are present.
+6. Open production edit mode with `https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET`.
+
+Both tree saves and photo uploads use the same `EDIT_SECRET` bearer token.
 
 ## Migrating Local Data To Vercel
 

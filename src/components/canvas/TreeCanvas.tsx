@@ -538,7 +538,7 @@ function TreeMinimap({
     <svg
       ref={minimapRef}
       data-canvas-control="true"
-      className="absolute bottom-3 left-3 z-20 h-[110px] w-[160px] rounded border app-border app-panel p-2 shadow-xl md:h-[150px] md:w-[220px]"
+      className="absolute bottom-3 left-3 z-20 hidden h-[150px] w-[220px] rounded border app-border app-panel p-2 shadow-xl md:block"
       preserveAspectRatio="xMidYMid meet"
       viewBox={`${layout.minX} ${layout.minY} ${layout.width} ${layout.height}`}
       onPointerDown={(event) => {

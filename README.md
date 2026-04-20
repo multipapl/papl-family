@@ -37,21 +37,37 @@ Required environment variables:
 UPSTASH_REDIS_REST_URL
 UPSTASH_REDIS_REST_TOKEN
 EDIT_SECRET
+BLOB_READ_WRITE_TOKEN
 ```
 
 The server also accepts the legacy `KV_REST_API_URL` and `KV_REST_API_TOKEN` names for migrated Vercel KV stores.
 
-Person photos are stored in Vercel Blob. Create a Blob store for the Vercel project so the deployment receives:
-
-```text
-BLOB_READ_WRITE_TOKEN
-```
-
-Open edit mode in production:
+Use the exact `EDIT_SECRET` value in the production URL:
 
 ```text
 https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET
 ```
+
+Do not use `dev` on Vercel. The `dev` edit secret only works locally when Redis is not configured.
+
+Person photos are stored in Vercel Blob. Create a Blob store for the Vercel project so the deployment receives `BLOB_READ_WRITE_TOKEN`.
+
+After changing Vercel environment variables, redeploy the project.
+
+## Vercel Setup
+
+1. Install an Upstash Redis integration from the Vercel Marketplace and connect it to this project.
+2. Confirm Vercel has `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+3. Create a Vercel Blob store and confirm `BLOB_READ_WRITE_TOKEN` exists.
+4. Add a strong custom `EDIT_SECRET`.
+5. Redeploy.
+6. Open edit mode with:
+
+```text
+https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET
+```
+
+Saving the tree and uploading photos both require the same edit token.
 
 ## Image Uploads
 
