@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Branch } from "@/domain/types";
 
@@ -12,8 +12,23 @@ type Props = {
 
 export default function BranchFilter({ branches, onChange, value }: Props) {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedBranch = branches.find((branch) => branch.id === value);
   const label = selectedBranch?.name ?? "Все ветви";
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && !containerRef.current?.contains(target)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [isOpen]);
 
   function choose(branchId: string) {
     onChange(branchId);
@@ -21,7 +36,7 @@ export default function BranchFilter({ branches, onChange, value }: Props) {
   }
 
   return (
-    <div className="relative w-full max-w-[320px]">
+    <div ref={containerRef} className="relative w-full max-w-[320px]">
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}

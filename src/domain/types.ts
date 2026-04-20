@@ -25,7 +25,10 @@ export type Person = {
 export type Union = {
   id: string;
   partnerIds: string[];
+  status?: UnionStatus;
 };
+
+export type UnionStatus = "married" | "divorced";
 
 export type ParentChildRelation = {
   id: string;
@@ -41,6 +44,7 @@ export type TreeSnapshot = {
   parentChildRelations: ParentChildRelation[];
   canvas?: {
     people: Record<string, { x: number; y: number }>;
+    collapsedAncestorPersonIds?: string[];
     collapsedPersonIds?: string[];
   };
 };
@@ -58,4 +62,4 @@ export type TreeIndexes = {
   unionIdsByPersonId: Map<string, string[]>;
 };
 
-export type PersonPatch = Partial<Omit<Person, "id">>;
+export type RelativeKind = "brother" | "sister" | "partner" | "son" | "daughter" | "father" | "mother";

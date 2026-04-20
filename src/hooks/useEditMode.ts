@@ -10,22 +10,41 @@ export function useEditMode() {
   const [showSecretInput, setShowSecretInput] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get("edit")?.trim();
     const storedToken = window.sessionStorage.getItem(tokenKey)?.trim() ?? "";
 
+    function applyToken(nextToken: string, enterEditMode = false) {
+      queueMicrotask(() => {
+        if (cancelled) return;
+        setToken(nextToken);
+        if (enterEditMode) setIsEditMode(true);
+      });
+    }
+
     if (tokenFromUrl) {
       window.sessionStorage.setItem(tokenKey, tokenFromUrl);
-      window.setTimeout(() => {
-        setToken(tokenFromUrl);
-        setIsEditMode(true);
-      }, 0);
-      return;
+      params.delete("edit");
+      const nextSearch = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`,
+      );
+      applyToken(tokenFromUrl, true);
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (storedToken) {
-      window.setTimeout(() => setToken(storedToken), 0);
+      applyToken(storedToken);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const enterWithToken = useCallback((nextToken: string) => {
@@ -57,7 +76,6 @@ export function useEditMode() {
     isEditMode,
     setIsEditMode,
     showSecretInput,
-    setShowSecretInput,
     token,
     toggleHiddenEdit,
   };

@@ -7,13 +7,14 @@ import {
   getPersonName,
   getUnionPartners,
 } from "@/domain/treeQueries";
-import type { Branch, Person, TreeIndexes, TreeSnapshot } from "@/domain/types";
+import type { Branch, Person, TreeIndexes, TreeSnapshot, UnionStatus } from "@/domain/types";
 
 type Props = {
   indexes: TreeIndexes;
   onClose: () => void;
   onDelete: (personId: string) => void;
   onSave: (person: Person) => void;
+  onSaveUnionStatus: (unionId: string, status: UnionStatus) => void;
   person: Person | null;
   snapshot: TreeSnapshot;
 };
@@ -24,24 +25,60 @@ type DateParts = {
   year: string;
 };
 
+type DatePartKey = keyof DateParts;
+
+const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function numericPart(value: string, maxLength: number) {
+  return value.replace(/\D/g, "").slice(0, maxLength);
+}
+
+function normalizeDateParts(parts: DateParts): DateParts {
+  return {
+    day: numericPart(parts.day, 2),
+    month: numericPart(parts.month, 2),
+    year: numericPart(parts.year, 4),
+  };
+}
+
 function splitDate(value?: string): DateParts {
   const cleaned = value?.replace(/^~/, "") ?? "";
   const [year = "", month = "", day = ""] = cleaned.split("-");
-  return { day, month, year };
+  return normalizeDateParts({ day, month, year });
+}
+
+function datePartsError(parts: DateParts) {
+  const normalized = normalizeDateParts(parts);
+  const year = Number(normalized.year);
+  const month = Number(normalized.month);
+  const day = Number(normalized.day);
+
+  if (!normalized.year && (normalized.month || normalized.day)) return "Укажите год.";
+  if (!normalized.year) return "";
+  if (year < 1 || year > 9999) return "Проверьте год.";
+  if (!normalized.month && normalized.day) return "Укажите месяц.";
+  if (!normalized.month) return "";
+  if (month < 1 || month > 12) return "Проверьте месяц.";
+  if (!normalized.day) return "";
+  if (day < 1 || day > daysInMonth[month - 1]) return "Проверьте день.";
+  return "";
 }
 
 function joinDate(parts: DateParts) {
-  const year = parts.year.trim();
-  const month = parts.month.trim().padStart(2, "0");
-  const day = parts.day.trim().padStart(2, "0");
+  const normalized = normalizeDateParts(parts);
+  if (datePartsError(normalized)) return undefined;
+
+  const year = normalized.year;
+  const month = normalized.month.padStart(2, "0");
+  const day = normalized.day.padStart(2, "0");
 
   if (!year) return undefined;
-  if (!parts.month.trim()) return year;
-  if (!parts.day.trim()) return `${year}-${month}`;
+  if (!normalized.month) return year;
+  if (!normalized.day) return `${year}-${month}`;
   return `${year}-${month}-${day}`;
 }
 
-export default function EditSidebar({ indexes, onClose, onDelete, onSave, person, snapshot }: Props) {
+export default function EditSidebar({ indexes, onClose, onDelete, onSave, onSaveUnionStatus, person, snapshot }: Props) {
   const [draft, setDraft] = useState<Person | null>(person);
   const [birth, setBirth] = useState<DateParts>(splitDate(person?.birthDate));
   const [death, setDeath] = useState<DateParts>(splitDate(person?.deathDate));
@@ -56,23 +93,28 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, person
   if (!draft) return null;
 
   const branchSuggestion = findMatchingBranch(snapshot.branches, draft);
+  const birthError = datePartsError(birth);
+  const deathError = datePartsError(death);
+  const canSave = !birthError && !deathError;
 
   function update(patch: Partial<Person>) {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }
 
   function save() {
+    if (!draft || !canSave) return;
     const deathDate = joinDate(death);
     onSave({
-      ...draft!,
+      ...draft,
       birthDate: joinDate(birth),
       deathDate,
-      isDeceased: Boolean(draft!.isDeceased || deathDate),
-      surname: draft!.surname?.trim() || undefined,
-      maidenName: draft!.maidenName?.trim() || undefined,
-      note: draft!.note?.trim() || undefined,
-      branchId: draft!.branchId || undefined,
-      primaryUnionId: draft!.primaryUnionId || undefined,
+      isDeceased: Boolean(draft.isDeceased || deathDate),
+      surname: draft.surname?.trim() || undefined,
+      maidenName: draft.maidenName?.trim() || undefined,
+      note: draft.note?.trim() || undefined,
+      photoUrl: draft.photoUrl?.trim() || undefined,
+      branchId: draft.branchId || undefined,
+      primaryUnionId: draft.primaryUnionId || undefined,
     });
   }
 
@@ -116,8 +158,8 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, person
           </div>
         </fieldset>
 
-        <DateFields label="Дата рождения" parts={birth} setParts={setBirth} />
-        <DateFields label="Дата смерти" parts={death} setParts={setDeath} />
+        <DateFields error={birthError} label="Дата рождения" parts={birth} setParts={setBirth} />
+        <DateFields error={deathError} label="Дата смерти" parts={death} setParts={setDeath} />
 
         <label className="flex items-center gap-2 rounded-lg border border-stone-200 px-3 py-2">
           <input type="checkbox" checked={Boolean(draft.isDeceased)} onChange={(event) => update({ isDeceased: event.target.checked })} />
@@ -127,6 +169,11 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, person
         <label className="block">
           <span className="text-sm font-semibold text-slate-700">Заметка</span>
           <textarea value={draft.note ?? ""} onChange={(event) => update({ note: event.target.value })} className="mt-1 min-h-24 w-full rounded-lg border border-stone-300 px-3 py-2" />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-slate-700">Фото</span>
+          <input value={draft.photoUrl ?? ""} onChange={(event) => update({ photoUrl: event.target.value })} className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2" />
         </label>
 
         <label className="block">
@@ -159,8 +206,24 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, person
           </label>
         ) : null}
 
+        {unions.filter((union) => union.partnerIds.length > 1).map((union) => (
+          <label key={union.id} className="block">
+            <span className="text-sm font-semibold text-slate-700">
+              Статус союза: {getUnionPartners(indexes, union, draft.id).map(getPersonName).join(", ") || "Без партнера"}
+            </span>
+            <select
+              value={union.status ?? "married"}
+              onChange={(event) => onSaveUnionStatus(union.id, event.target.value as UnionStatus)}
+              className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+            >
+              <option value="married">Брак</option>
+              <option value="divorced">Развод</option>
+            </select>
+          </label>
+        ))}
+
         <div className="flex gap-2 pt-2">
-          <button type="button" onClick={save} className="flex-1 rounded-lg bg-slate-950 px-4 py-3 font-bold text-white">
+          <button type="button" disabled={!canSave} onClick={save} className="flex-1 rounded-lg bg-slate-950 px-4 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
             Сохранить
           </button>
           <button type="button" onClick={() => onDelete(draft.id)} className="rounded-lg bg-rose-50 px-4 py-3 font-bold text-rose-800">
@@ -173,22 +236,32 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, person
 }
 
 function DateFields({
+  error,
   label,
   parts,
   setParts,
 }: {
+  error: string;
   label: string;
   parts: DateParts;
   setParts: (parts: DateParts) => void;
 }) {
+  function updatePart(key: DatePartKey, value: string) {
+    setParts({
+      ...parts,
+      [key]: numericPart(value, key === "year" ? 4 : 2),
+    });
+  }
+
   return (
     <fieldset>
       <legend className="text-sm font-semibold text-slate-700">{label}</legend>
       <div className="mt-1 grid grid-cols-3 gap-2">
-        <input aria-label="День" placeholder="день" value={parts.day} onChange={(event) => setParts({ ...parts, day: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
-        <input aria-label="Месяц" placeholder="месяц" value={parts.month} onChange={(event) => setParts({ ...parts, month: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
-        <input aria-label="Год" placeholder="год" value={parts.year} onChange={(event) => setParts({ ...parts, year: event.target.value })} className="rounded-lg border border-stone-300 px-3 py-2" />
+        <input aria-invalid={Boolean(error)} aria-label="День" inputMode="numeric" maxLength={2} placeholder="день" value={parts.day} onChange={(event) => updatePart("day", event.target.value)} className="rounded-lg border border-stone-300 px-3 py-2" />
+        <input aria-invalid={Boolean(error)} aria-label="Месяц" inputMode="numeric" maxLength={2} placeholder="месяц" value={parts.month} onChange={(event) => updatePart("month", event.target.value)} className="rounded-lg border border-stone-300 px-3 py-2" />
+        <input aria-invalid={Boolean(error)} aria-label="Год" inputMode="numeric" maxLength={4} placeholder="год" value={parts.year} onChange={(event) => updatePart("year", event.target.value)} className="rounded-lg border border-stone-300 px-3 py-2" />
       </div>
+      {error ? <p className="mt-1 text-sm font-semibold text-rose-800">{error}</p> : null}
     </fieldset>
   );
 }

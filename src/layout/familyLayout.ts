@@ -1,6 +1,7 @@
-import type { Person, TreeIndexes, TreeSnapshot } from "@/domain/types";
+import type { Person, TreeIndexes, TreeSnapshot, UnionStatus } from "@/domain/types";
 
 export type PersonLayoutNode = {
+  branchColor?: string;
   id: string;
   x: number;
   y: number;
@@ -11,11 +12,13 @@ export type PersonLayoutNode = {
 };
 
 export type UnionLayoutNode = {
+  hasHiddenPartners?: boolean;
   id: string;
   x: number;
   y: number;
   partnerIds: string[];
   childIds: string[];
+  status?: UnionStatus;
 };
 
 export type LayoutResult = {
@@ -27,8 +30,8 @@ export type LayoutResult = {
   height: number;
 };
 
-export const CARD_WIDTH = 160;
-export const CARD_HEIGHT = 96;
+export const CARD_WIDTH = 192;
+export const CARD_HEIGHT = 124;
 
 const FALLBACK_COLUMNS = 6;
 const FALLBACK_X_GAP = 240;
@@ -46,7 +49,10 @@ export function computeLayout(snapshot: TreeSnapshot, indexes: TreeIndexes, visi
     const position = positions[person.id] ?? fallback;
     const generation = indexes.generationByPersonId.get(person.id) ?? Math.round(position.y / FALLBACK_Y_GAP);
 
+    const branch = person.branchId ? indexes.branchById.get(person.branchId) : undefined;
+
     personNodes.set(person.id, {
+      branchColor: branch?.color,
       id: person.id,
       x: position.x,
       y: position.y,
@@ -80,11 +86,13 @@ export function computeLayout(snapshot: TreeSnapshot, indexes: TreeIndexes, visi
         : average(childNodes.map((node) => node.y)) - CARD_HEIGHT / 2 - 70;
 
     unionNodes.set(union.id, {
+      hasHiddenPartners: union.partnerIds.length > 0 && partnerIds.length === 0,
       id: union.id,
       x,
       y,
       partnerIds,
       childIds,
+      status: union.status,
     });
   }
 
@@ -121,12 +129,9 @@ function average(values: number[]) {
 }
 
 export function markOtherUnionChildren(
-  snapshot: TreeSnapshot,
   indexes: TreeIndexes,
   layout: LayoutResult,
 ) {
-  void snapshot;
-
   for (const [personId, node] of layout.people) {
     const parentUnionIds = indexes.parentUnionIdsByChildId.get(personId) ?? [];
     if (parentUnionIds.length <= 1) continue;

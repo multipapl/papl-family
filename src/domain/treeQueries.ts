@@ -10,6 +10,19 @@ export const emptySnapshot: TreeSnapshot = {
   parentChildRelations: [],
 };
 
+export function isTreeSnapshot(value: unknown): value is TreeSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<TreeSnapshot>;
+
+  return (
+    typeof candidate.version === "number" &&
+    Array.isArray(candidate.branches) &&
+    Array.isArray(candidate.people) &&
+    Array.isArray(candidate.unions) &&
+    Array.isArray(candidate.parentChildRelations)
+  );
+}
+
 export function cloneSnapshot(snapshot: TreeSnapshot): TreeSnapshot {
   return {
     version: snapshot.version,
@@ -27,6 +40,7 @@ export function cloneSnapshot(snapshot: TreeSnapshot): TreeSnapshot {
     })),
     canvas: snapshot.canvas
       ? {
+          collapsedAncestorPersonIds: [...(snapshot.canvas.collapsedAncestorPersonIds ?? [])],
           collapsedPersonIds: [...(snapshot.canvas.collapsedPersonIds ?? [])],
           people: Object.fromEntries(
             Object.entries(snapshot.canvas.people).map(([id, position]) => [
@@ -177,7 +191,7 @@ function computeGenerations(
     if (!current) continue;
 
     const saved = groupGenerations.get(current.groupId);
-    if (saved !== undefined && saved <= current.generation) continue;
+    if (saved !== undefined && saved >= current.generation) continue;
 
     groupGenerations.set(current.groupId, current.generation);
 
@@ -204,7 +218,7 @@ export function getPersonName(person: Person) {
   const maiden = person.maidenName?.trim();
 
   if (maiden && surname && maiden !== surname && person.gender === "female") {
-    return `${givenName} (${maiden}) ${surname}`.trim();
+    return `${givenName} ${surname} (${maiden})`.trim();
   }
 
   return [givenName, surname].filter(Boolean).join(" ").trim() || "Без имени";
@@ -316,20 +330,26 @@ export function findMatchingBranch(branches: Branch[], person: Pick<Person, "sur
 }
 
 export function applyAutoBranch(snapshot: TreeSnapshot) {
-  for (const person of snapshot.people) {
+  const next = cloneSnapshot(snapshot);
+
+  for (const person of next.people) {
     if (person.branchId) continue;
-    const branch = findMatchingBranch(snapshot.branches, person);
+    const branch = findMatchingBranch(next.branches, person);
     if (branch) person.branchId = branch.id;
   }
 
-  return snapshot;
+  return next;
 }
 
 export function getReadableBranchIds(indexes: TreeIndexes, selectedBranchId: string) {
   const ids = new Set<string>();
+  const selectedBranch = indexes.branchById.get(selectedBranchId);
+  if (!selectedBranch) return ids;
 
   for (const person of indexes.personById.values()) {
-    if (person.branchId === selectedBranchId) ids.add(person.id);
+    const assignedToBranch = person.branchId === selectedBranchId;
+    const matchesBranchName = !person.branchId && findMatchingBranch([selectedBranch], person)?.id === selectedBranchId;
+    if (assignedToBranch || matchesBranchName) ids.add(person.id);
   }
 
   const baseIds = [...ids];
@@ -351,9 +371,13 @@ export function serializeSnapshot(snapshot: TreeSnapshot): TreeSnapshot {
   return JSON.parse(JSON.stringify(snapshot)) as TreeSnapshot;
 }
 
+/**
+ * Mutates the provided cloned snapshot/draft to guarantee canvas containers exist.
+ */
 export function ensureCanvas(snapshot: TreeSnapshot) {
   if (!snapshot.canvas) snapshot.canvas = { collapsedPersonIds: [], people: {} };
   if (!snapshot.canvas.people) snapshot.canvas.people = {};
+  if (!snapshot.canvas.collapsedAncestorPersonIds) snapshot.canvas.collapsedAncestorPersonIds = [];
   if (!snapshot.canvas.collapsedPersonIds) snapshot.canvas.collapsedPersonIds = [];
   return snapshot.canvas;
 }

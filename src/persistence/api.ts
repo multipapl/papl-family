@@ -1,4 +1,14 @@
+import { isTreeSnapshot } from "@/domain/treeQueries";
 import type { TreeSnapshot } from "@/domain/types";
+
+async function readTreeSnapshotResponse(response: Response, fallbackMessage: string) {
+  const payload: unknown = await response.json();
+  if (!isTreeSnapshot(payload)) {
+    throw new Error(fallbackMessage);
+  }
+
+  return payload;
+}
 
 export async function loadTreeSnapshot() {
   const response = await fetch("/api/tree", {
@@ -9,7 +19,7 @@ export async function loadTreeSnapshot() {
     throw new Error("Не удалось загрузить дерево.");
   }
 
-  return (await response.json()) as TreeSnapshot;
+  return readTreeSnapshotResponse(response, "Сервер вернул поврежденные данные дерева.");
 }
 
 export async function saveTreeSnapshot(snapshot: TreeSnapshot, token?: string) {
@@ -26,5 +36,5 @@ export async function saveTreeSnapshot(snapshot: TreeSnapshot, token?: string) {
     throw new Error(response.status === 401 ? "Нет доступа к редактированию." : "Не удалось сохранить дерево.");
   }
 
-  return (await response.json()) as TreeSnapshot;
+  return readTreeSnapshotResponse(response, "Сервер не подтвердил сохранение дерева.");
 }

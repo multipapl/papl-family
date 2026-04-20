@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { cloneSnapshot } from "@/domain/treeQueries";
 import type { TreeSnapshot } from "@/domain/types";
 import { loadTreeSnapshot, saveTreeSnapshot } from "@/persistence/api";
 
@@ -11,6 +10,10 @@ export function useTreeData() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const lastSavedVersionRef = useRef(0);
+  const latestSaveRequestRef = useRef(0);
+  const pendingSavesRef = useRef(0);
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     let cancelled = false;
@@ -21,7 +24,10 @@ export function useTreeData() {
 
       try {
         const loaded = await loadTreeSnapshot();
-        if (!cancelled) setSnapshot(loaded);
+        if (!cancelled) {
+          lastSavedVersionRef.current = loaded.version;
+          setSnapshot(loaded);
+        }
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить дерево.");
@@ -37,34 +43,38 @@ export function useTreeData() {
     };
   }, []);
 
-  const updateLocal = useCallback((updater: (draft: TreeSnapshot) => void) => {
-    setSnapshot((current) => {
-      if (!current) return current;
-      const draft = cloneSnapshot(current);
-      updater(draft);
-      return draft;
-    });
-  }, []);
-
-  const save = useCallback(async (nextSnapshot: TreeSnapshot, token?: string) => {
+  const save = useCallback((nextSnapshot: TreeSnapshot, token?: string) => {
+    const saveRequestId = latestSaveRequestRef.current + 1;
+    latestSaveRequestRef.current = saveRequestId;
+    pendingSavesRef.current += 1;
     setIsSaving(true);
     setErrorMessage("");
 
-    try {
-      const saved = await saveTreeSnapshot(
-        {
-          ...nextSnapshot,
-          version: nextSnapshot.version + 1,
-        },
-        token,
-      );
-      setSnapshot(saved);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить дерево.");
-      throw error;
-    } finally {
-      setIsSaving(false);
-    }
+    const queuedSave = saveQueueRef.current.then(async () => {
+      const snapshotToSave = {
+        ...nextSnapshot,
+        version: Math.max(nextSnapshot.version, lastSavedVersionRef.current) + 1,
+      };
+
+      try {
+        const savedSnapshot = await saveTreeSnapshot(snapshotToSave, token);
+        setErrorMessage("");
+        lastSavedVersionRef.current = savedSnapshot.version;
+        if (latestSaveRequestRef.current === saveRequestId) {
+          setSnapshot(savedSnapshot);
+        }
+        return savedSnapshot;
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить дерево.");
+        throw error;
+      } finally {
+        pendingSavesRef.current -= 1;
+        if (pendingSavesRef.current === 0) setIsSaving(false);
+      }
+    });
+
+    saveQueueRef.current = queuedSave.catch(() => undefined);
+    return queuedSave;
   }, []);
 
   return {
@@ -74,6 +84,5 @@ export function useTreeData() {
     save,
     setSnapshot,
     snapshot,
-    updateLocal,
   };
 }

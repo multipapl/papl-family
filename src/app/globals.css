@@ -28,6 +28,7 @@ body {
   height: 100%;
 }
 
+/* Legacy theme adapter for existing Tailwind utility markup. Prefer semantic variables for new UI. */
 .bg-\[\#f7f3ec\] {
   background-color: var(--background) !important;
 }
@@ -104,6 +105,7 @@ select {
   background-color: #121816;
   border-color: var(--line) !important;
   color: var(--foreground);
+  font-size: 16px;
 }
 
 input::placeholder,

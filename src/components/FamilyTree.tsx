@@ -15,12 +15,10 @@ import {
   getReadableBranchIds,
   makeId,
 } from "@/domain/treeQueries";
-import type { Person, TreeSnapshot } from "@/domain/types";
+import type { Person, RelativeKind, TreeIndexes, TreeSnapshot, UnionStatus } from "@/domain/types";
 import { useEditMode } from "@/hooks/useEditMode";
 import { useTreeData } from "@/hooks/useTreeData";
 import { computeLayout, markOtherUnionChildren } from "@/layout/familyLayout";
-
-type RelativeKind = "brother" | "sister" | "partner" | "son" | "daughter";
 
 const invisibleGridSize = 20;
 const rowSize = 200;
@@ -33,9 +31,9 @@ function snapToInvisibleGrid(x: number, y: number) {
   };
 }
 
-function getVisibleIds(snapshot: TreeSnapshot) {
-  const indexes = buildIndexes(snapshot);
-  const collapsedIds = new Set(snapshot.canvas?.collapsedPersonIds ?? []);
+function getVisibleIds(snapshot: TreeSnapshot, indexes: TreeIndexes) {
+  const collapsedAncestorIds = new Set(snapshot.canvas?.collapsedAncestorPersonIds ?? []);
+  const collapsedDescendantIds = new Set(snapshot.canvas?.collapsedPersonIds ?? []);
   const hiddenByCollapse = new Set<string>();
 
   const hideDescendants = (personId: string) => {
@@ -46,7 +44,16 @@ function getVisibleIds(snapshot: TreeSnapshot) {
     }
   };
 
-  for (const collapsedId of collapsedIds) hideDescendants(collapsedId);
+  const hideAncestors = (personId: string) => {
+    for (const parentId of indexes.parentIdsByChildId.get(personId) ?? []) {
+      if (hiddenByCollapse.has(parentId)) continue;
+      hiddenByCollapse.add(parentId);
+      hideAncestors(parentId);
+    }
+  };
+
+  for (const collapsedId of collapsedAncestorIds) hideAncestors(collapsedId);
+  for (const collapsedId of collapsedDescendantIds) hideDescendants(collapsedId);
 
   return new Set(
     snapshot.people
@@ -55,7 +62,38 @@ function getVisibleIds(snapshot: TreeSnapshot) {
   );
 }
 
+function getAncestorIds(indexes: TreeIndexes, personId: string) {
+  const ids = new Set<string>();
+
+  const visit = (id: string) => {
+    for (const parentId of indexes.parentIdsByChildId.get(id) ?? []) {
+      if (ids.has(parentId)) continue;
+      ids.add(parentId);
+      visit(parentId);
+    }
+  };
+
+  visit(personId);
+  return ids;
+}
+
+function setsIntersect(left: Set<string>, right: Set<string>) {
+  for (const value of left) {
+    if (right.has(value)) return true;
+  }
+
+  return false;
+}
+
+function getFocusAncestorLineIds(indexes: TreeIndexes, personId: string) {
+  const focus = new Set<string>([personId]);
+  for (const id of getAncestorIds(indexes, personId)) focus.add(id);
+  return focus;
+}
+
 function getRelativePosition(kind: RelativeKind, anchorPosition: { x: number; y: number }) {
+  if (kind === "father") return { x: anchorPosition.x - 120, y: anchorPosition.y - rowSize };
+  if (kind === "mother") return { x: anchorPosition.x + 120, y: anchorPosition.y - rowSize };
   if (kind === "partner") return { x: anchorPosition.x + 240, y: anchorPosition.y };
   if (kind === "brother") return { x: anchorPosition.x - 240, y: anchorPosition.y };
   if (kind === "sister") return { x: anchorPosition.x + 240, y: anchorPosition.y };
@@ -64,6 +102,8 @@ function getRelativePosition(kind: RelativeKind, anchorPosition: { x: number; y:
 }
 
 function getRelativeDraftName(kind: RelativeKind) {
+  if (kind === "father") return "Новый отец";
+  if (kind === "mother") return "Новая мать";
   if (kind === "partner") return "Новый партнер";
   if (kind === "brother") return "Новый брат";
   if (kind === "sister") return "Новая сестра";
@@ -80,17 +120,51 @@ function createRelative(kind: RelativeKind, anchor: Person, snapshot: TreeSnapsh
   const gender =
     kind === "partner"
       ? anchor.gender === "male" ? "female" : "male"
-      : kind === "brother" || kind === "son" ? "male" : "female";
+      : kind === "brother" || kind === "son" || kind === "father" ? "male" : "female";
   const person: Person = {
     id: makeId("person"),
     givenName: getRelativeDraftName(kind),
     gender,
   };
+  const addPersonToCanvas = () => {
+    next.people.push(person);
+    canvas.people[person.id] = snapToInvisibleGrid(rawPosition.x, rawPosition.y);
+  };
 
-  next.people.push(person);
-  canvas.people[person.id] = snapToInvisibleGrid(rawPosition.x, rawPosition.y);
+  if (kind === "father" || kind === "mother") {
+    let parentUnionId = indexes.parentUnionIdsByChildId.get(anchor.id)?.[0];
+    let parentUnion = parentUnionId ? next.unions.find((union) => union.id === parentUnionId) : undefined;
+
+    if (!parentUnion) {
+      parentUnion = {
+        id: makeId("union"),
+        partnerIds: [],
+      };
+      next.unions.push(parentUnion);
+      parentUnionId = parentUnion.id;
+      next.parentChildRelations.push({
+        id: makeId("rel"),
+        childId: anchor.id,
+        unionId: parentUnionId,
+      });
+    }
+
+    if (parentUnion.partnerIds.length >= 2) return next;
+
+    addPersonToCanvas();
+    parentUnion.partnerIds.push(person.id);
+    person.primaryUnionId = parentUnion.id;
+
+    for (const partnerId of parentUnion.partnerIds) {
+      const partner = next.people.find((item) => item.id === partnerId);
+      if (partner && !partner.primaryUnionId) partner.primaryUnionId = parentUnion.id;
+    }
+
+    return next;
+  }
 
   if (kind === "partner") {
+    addPersonToCanvas();
     const union = {
       id: makeId("union"),
       partnerIds: [anchor.id, person.id],
@@ -104,6 +178,7 @@ function createRelative(kind: RelativeKind, anchor: Person, snapshot: TreeSnapsh
   }
 
   if (kind === "brother" || kind === "sister") {
+    addPersonToCanvas();
     let parentUnionId = indexes.parentUnionIdsByChildId.get(anchor.id)?.[0];
 
     if (!parentUnionId) {
@@ -144,6 +219,7 @@ function createRelative(kind: RelativeKind, anchor: Person, snapshot: TreeSnapsh
     if (anchorInNext && !anchorInNext.primaryUnionId) anchorInNext.primaryUnionId = union.id;
   }
 
+  addPersonToCanvas();
   next.parentChildRelations.push({
     id: makeId("rel"),
     childId: person.id,
@@ -153,11 +229,24 @@ function createRelative(kind: RelativeKind, anchor: Person, snapshot: TreeSnapsh
   return next;
 }
 
+function pruneDanglingPrimaryUnionIds(snapshot: TreeSnapshot) {
+  const unionById = new Map(snapshot.unions.map((union) => [union.id, union]));
+
+  for (const person of snapshot.people) {
+    if (!person.primaryUnionId) continue;
+    const union = unionById.get(person.primaryUnionId);
+    if (!union || !union.partnerIds.includes(person.id)) {
+      delete person.primaryUnionId;
+    }
+  }
+}
+
 export default function FamilyTree() {
   const treeData = useTreeData();
   const edit = useEditMode();
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set());
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [addMenuPerson, setAddMenuPerson] = useState<Person | null>(null);
   const [showBranches, setShowBranches] = useState(false);
@@ -169,21 +258,29 @@ export default function FamilyTree() {
   );
 
   const visibleIds = useMemo(
-    () => (treeData.snapshot ? getVisibleIds(treeData.snapshot) : new Set<string>()),
-    [treeData.snapshot],
+    () => (treeData.snapshot && indexes ? getVisibleIds(treeData.snapshot, indexes) : new Set<string>()),
+    [indexes, treeData.snapshot],
   );
 
   const layout = useMemo(() => {
     if (!treeData.snapshot || !indexes) return null;
     const computed = computeLayout(treeData.snapshot, indexes, visibleIds);
-    return markOtherUnionChildren(treeData.snapshot, indexes, computed);
+    return markOtherUnionChildren(indexes, computed);
   }, [indexes, treeData.snapshot, visibleIds]);
 
   const dimmedIds = useMemo(() => {
-    if (!selectedBranchId || !indexes) return new Set<string>();
+    if (!indexes) return new Set<string>();
+
+    // Selection focus overrides branch dimming: keep selected person + all ancestors.
+    if (selectedPersonId) {
+      const focusIds = getFocusAncestorLineIds(indexes, selectedPersonId);
+      return new Set([...visibleIds].filter((id) => !focusIds.has(id)));
+    }
+
+    if (!selectedBranchId) return new Set<string>();
     const readable = getReadableBranchIds(indexes, selectedBranchId);
     return new Set([...visibleIds].filter((id) => !readable.has(id)));
-  }, [indexes, selectedBranchId, visibleIds]);
+  }, [indexes, selectedBranchId, selectedPersonId, visibleIds]);
 
   const selectedPerson = selectedPersonId && indexes ? indexes.personById.get(selectedPersonId) ?? null : null;
   const selectedLayoutNode = selectedPersonId && layout ? layout.people.get(selectedPersonId) : undefined;
@@ -191,8 +288,17 @@ export default function FamilyTree() {
   async function persist(nextSnapshot: TreeSnapshot) {
     treeData.setSnapshot(nextSnapshot);
     if (edit.isEditMode) {
-      await treeData.save(nextSnapshot, edit.token);
+      await treeData.save(nextSnapshot, edit.token).catch(() => undefined);
     }
+  }
+
+  function queueSave(nextSnapshot: TreeSnapshot) {
+    void treeData.save(nextSnapshot, edit.token).catch(() => undefined);
+  }
+
+  function saveCurrentSnapshot() {
+    if (!treeData.snapshot || !edit.isEditMode) return;
+    queueSave(treeData.snapshot);
   }
 
   async function addPersonAt(position: { x: number; y: number }) {
@@ -209,6 +315,7 @@ export default function FamilyTree() {
     await persist(next);
     setEditingPerson(person);
     setSelectedPersonId(person.id);
+    setSelectedPersonIds(new Set([person.id]));
   }
 
   async function savePerson(nextPerson: Person) {
@@ -224,9 +331,22 @@ export default function FamilyTree() {
         if (partner && !partner.primaryUnionId) partner.primaryUnionId = nextPerson.primaryUnionId;
       }
     }
+    pruneDanglingPrimaryUnionIds(next);
 
     await persist(applyAutoBranch(next));
     setEditingPerson(null);
+  }
+
+  async function saveUnionStatus(unionId: string, status: UnionStatus) {
+    if (!treeData.snapshot) return;
+    const next = cloneSnapshot(treeData.snapshot);
+    const union = next.unions.find((item) => item.id === unionId);
+    if (!union) return;
+
+    if (status === "married") delete union.status;
+    else union.status = status;
+
+    await persist(next);
   }
 
   async function deletePerson(personId: string) {
@@ -242,31 +362,99 @@ export default function FamilyTree() {
     next.unions = next.unions
       .map((union) => ({ ...union, partnerIds: union.partnerIds.filter((id) => id !== personId) }))
       .filter((union) => union.partnerIds.length > 0 || next.parentChildRelations.some((relation) => relation.unionId === union.id));
+    pruneDanglingPrimaryUnionIds(next);
     delete canvas.people[personId];
+    canvas.collapsedAncestorPersonIds = (canvas.collapsedAncestorPersonIds ?? []).filter((id) => id !== personId);
     canvas.collapsedPersonIds = (canvas.collapsedPersonIds ?? []).filter((id) => id !== personId);
 
     await persist(next);
     setEditingPerson(null);
+    setAddMenuPerson((current) => (current?.id === personId ? null : current));
     if (selectedPersonId === personId) setSelectedPersonId("");
+    setSelectedPersonIds((current) => {
+      const nextSelected = new Set(current);
+      nextSelected.delete(personId);
+      return nextSelected;
+    });
+  }
+
+  async function deleteSelectedPeople() {
+    if (!treeData.snapshot) return;
+
+    const ids = new Set<string>(selectedPersonIds);
+    if (selectedPersonId) ids.add(selectedPersonId);
+    if (ids.size === 0) return;
+
+    const question =
+      ids.size === 1
+        ? "Удалить выбранного человека из дерева?"
+        : `Удалить выбранных людей из дерева? (${ids.size})`;
+
+    if (!window.confirm(question)) return;
+
+    const next = cloneSnapshot(treeData.snapshot);
+    const canvas = ensureCanvas(next);
+
+    next.people = next.people.filter((person) => !ids.has(person.id));
+    next.parentChildRelations = next.parentChildRelations.filter((relation) => !ids.has(relation.childId));
+    next.unions = next.unions
+      .map((union) => ({ ...union, partnerIds: union.partnerIds.filter((id) => !ids.has(id)) }))
+      .filter((union) => union.partnerIds.length > 0 || next.parentChildRelations.some((relation) => relation.unionId === union.id));
+    pruneDanglingPrimaryUnionIds(next);
+
+    for (const id of ids) {
+      delete canvas.people[id];
+    }
+
+    canvas.collapsedAncestorPersonIds = (canvas.collapsedAncestorPersonIds ?? []).filter((id) => !ids.has(id));
+    canvas.collapsedPersonIds = (canvas.collapsedPersonIds ?? []).filter((id) => !ids.has(id));
+
+    await persist(next);
+
+    setEditingPerson((current) => (current && ids.has(current.id) ? null : current));
+    setAddMenuPerson((current) => (current && ids.has(current.id) ? null : current));
+    setSelectedPersonId("");
+    setSelectedPersonIds(new Set());
   }
 
   async function addRelative(kind: RelativeKind) {
     if (!treeData.snapshot || !addMenuPerson) return;
-    await persist(applyAutoBranch(createRelative(kind, addMenuPerson, treeData.snapshot)));
+    const next = applyAutoBranch(createRelative(kind, addMenuPerson, treeData.snapshot));
+    const hasStructuralChange =
+      next.people.length !== treeData.snapshot.people.length ||
+      next.unions.length !== treeData.snapshot.unions.length ||
+      next.parentChildRelations.length !== treeData.snapshot.parentChildRelations.length;
+
+    if (hasStructuralChange) {
+      await persist(next);
+    }
+
     setAddMenuPerson(null);
   }
 
-  function movePerson(personId: string, x: number, y: number, commit: boolean) {
+  function movePeople(moves: Array<{ personId: string; x: number; y: number }>, commit: boolean) {
     if (!treeData.snapshot) return;
     const next = cloneSnapshot(treeData.snapshot);
-    const position = snapToInvisibleGrid(x, y);
+    const canvas = ensureCanvas(next);
 
-    ensureCanvas(next).people[personId] = position;
+    for (const move of moves) {
+      canvas.people[move.personId] = snapToInvisibleGrid(move.x, move.y);
+    }
     treeData.setSnapshot(next);
 
     if (commit && edit.isEditMode) {
-      void treeData.save(next, edit.token);
+      queueSave(next);
     }
+  }
+
+  function selectPerson(person: Person) {
+    setSelectedPersonId(person.id);
+    setSelectedPersonIds(new Set([person.id]));
+  }
+
+  function selectPeople(personIds: string[]) {
+    setSelectedPersonIds(new Set(personIds));
+    setSelectedPersonId(personIds.length === 1 ? (personIds[0] ?? "") : "");
   }
 
   function toggleCollapse(personId: string) {
@@ -283,8 +471,45 @@ export default function FamilyTree() {
     treeData.setSnapshot(next);
 
     if (edit.isEditMode) {
-      void treeData.save(next, edit.token);
+      queueSave(next);
     }
+  }
+
+  function toggleAncestorCollapse(personId: string) {
+    if (!treeData.snapshot || !indexes) return;
+
+    const next = cloneSnapshot(treeData.snapshot);
+    const canvas = ensureCanvas(next);
+    const collapsed = new Set(canvas.collapsedAncestorPersonIds ?? []);
+    const ancestors = getAncestorIds(indexes, personId);
+    const hasHiddenParents = (indexes.parentIdsByChildId.get(personId) ?? []).some((parentId) => !visibleIds.has(parentId));
+
+    if (collapsed.has(personId) || hasHiddenParents) {
+      collapsed.delete(personId);
+
+      for (const collapsedId of [...collapsed]) {
+        if (setsIntersect(ancestors, getAncestorIds(indexes, collapsedId))) {
+          collapsed.delete(collapsedId);
+        }
+      }
+    } else {
+      collapsed.add(personId);
+    }
+
+    canvas.collapsedAncestorPersonIds = [...collapsed];
+    treeData.setSnapshot(next);
+
+    if (edit.isEditMode) {
+      queueSave(next);
+    }
+  }
+
+  if (treeData.errorMessage && !treeData.snapshot) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f3ec] px-6 text-center text-rose-800">
+        {treeData.errorMessage}
+      </main>
+    );
   }
 
   if (treeData.isLoading || !treeData.snapshot || !indexes || !layout) {
@@ -294,14 +519,6 @@ export default function FamilyTree() {
           <h1 className="text-3xl font-bold text-slate-950">Семейное дерево</h1>
           <p className="mt-2 text-slate-600">Загружаем...</p>
         </div>
-      </main>
-    );
-  }
-
-  if (treeData.errorMessage && !treeData.snapshot) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f3ec] px-6 text-center text-rose-800">
-        {treeData.errorMessage}
       </main>
     );
   }
@@ -319,6 +536,23 @@ export default function FamilyTree() {
             <button type="button" onClick={() => setShowBranches(true)} className="rounded-md bg-white px-3 py-1.5 shadow-sm">
               Ветви
             </button>
+            <button
+              type="button"
+              disabled={treeData.isSaving || selectedPersonIds.size === 0}
+              onClick={() => void deleteSelectedPeople()}
+              className="rounded-md bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              title="Удалить выбранные карточки"
+            >
+              Удалить
+            </button>
+            <button
+              type="button"
+              disabled={treeData.isSaving}
+              onClick={saveCurrentSnapshot}
+              className="rounded-md bg-slate-950 px-3 py-1.5 text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              Сохранить
+            </button>
             <button type="button" onClick={() => edit.setIsEditMode(false)} className="rounded-md bg-white px-3 py-1.5 shadow-sm">
               × Выйти
             </button>
@@ -329,7 +563,6 @@ export default function FamilyTree() {
 
       <TreeCanvas
         addMenuPersonId={addMenuPerson?.id}
-        branches={treeData.snapshot.branches}
         dimmedIds={dimmedIds}
         indexes={indexes}
         isEditMode={edit.isEditMode}
@@ -341,16 +574,22 @@ export default function FamilyTree() {
         onChooseRelative={addRelative}
         onCloseAddMenu={() => setAddMenuPerson(null)}
         onEditPerson={setEditingPerson}
-        onMovePerson={movePerson}
-        onSelectPerson={(person) => setSelectedPersonId(person.id)}
+        onMovePeople={movePeople}
+        onSelectPeople={selectPeople}
+        onSelectPerson={selectPerson}
+        onToggleAncestorCollapse={toggleAncestorCollapse}
         onToggleCollapse={toggleCollapse}
         selectedPersonId={selectedPersonId}
+        selectedPersonIds={selectedPersonIds}
         snapshot={treeData.snapshot}
       />
 
       <PersonDetail
         indexes={indexes}
-        onClose={() => setSelectedPersonId("")}
+        onClose={() => {
+          setSelectedPersonId("");
+          setSelectedPersonIds(new Set());
+        }}
         person={selectedPerson}
         showOtherUnionNote={selectedLayoutNode?.fromOtherUnion}
       />
@@ -378,7 +617,7 @@ export default function FamilyTree() {
       <button
         type="button"
         onClick={edit.toggleHiddenEdit}
-        className="absolute bottom-3 right-3 z-50 grid h-11 w-11 place-items-center rounded-full bg-white/90 text-xl font-bold text-slate-500 shadow"
+        className="absolute bottom-3 right-3 z-50 grid h-11 w-11 place-items-center rounded-full bg-white/90 text-xl font-bold text-slate-500 shadow transition active:scale-95 active:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         title="Редактирование"
       >
         ⋯
@@ -404,6 +643,7 @@ export default function FamilyTree() {
           onClose={() => setEditingPerson(null)}
           onDelete={deletePerson}
           onSave={savePerson}
+          onSaveUnionStatus={saveUnionStatus}
           person={editingPerson}
           snapshot={treeData.snapshot}
         />
@@ -414,12 +654,14 @@ export default function FamilyTree() {
           branches={treeData.snapshot.branches}
           onClose={() => setShowBranches(false)}
           onChange={async (branches, deletedBranchId) => {
-            const next = cloneSnapshot(treeData.snapshot!);
+            if (!treeData.snapshot) return;
+            const next = cloneSnapshot(treeData.snapshot);
             next.branches = branches;
             if (deletedBranchId) {
               for (const person of next.people) {
                 if (person.branchId === deletedBranchId) delete person.branchId;
               }
+              if (selectedBranchId === deletedBranchId) setSelectedBranchId("");
             }
             await persist(applyAutoBranch(next));
           }}

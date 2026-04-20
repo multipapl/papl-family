@@ -24,6 +24,8 @@ function getTouchCenter(left: React.Touch, right: React.Touch) {
   };
 }
 
+const minPinchDistance = 1;
+
 export function usePanZoom(bounds: Bounds) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ scale: 1, tx: 0, ty: 0 });
@@ -44,6 +46,17 @@ export function usePanZoom(bounds: Bounds) {
       ty: (rect.height - bounds.height * scale) / 2 - minY * scale,
     });
   }, [bounds.height, bounds.minX, bounds.minY, bounds.width]);
+
+  const centerOn = useCallback((x: number, y: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setTransform((current) => ({
+      ...current,
+      tx: rect.width / 2 - x * current.scale,
+      ty: rect.height / 2 - y * current.scale,
+    }));
+  }, []);
 
   useEffect(() => {
     if (didAutoFit.current) return;
@@ -86,11 +99,9 @@ export function usePanZoom(bounds: Bounds) {
     }
 
     if (event.touches.length === 2) {
+      const dist = getTouchDistance(event.touches[0], event.touches[1]);
       panStart.current = null;
-      pinchStart.current = {
-        dist: getTouchDistance(event.touches[0], event.touches[1]),
-        scale: transform.scale,
-      };
+      pinchStart.current = dist >= minPinchDistance ? { dist, scale: transform.scale } : null;
     }
   }, [transform.scale, transform.tx, transform.ty]);
 
@@ -111,6 +122,7 @@ export function usePanZoom(bounds: Bounds) {
       const center = getTouchCenter(event.touches[0], event.touches[1]);
       const rect = containerRef.current?.getBoundingClientRect();
       const distance = getTouchDistance(event.touches[0], event.touches[1]);
+      if (pinchStart.current.dist < minPinchDistance || distance < minPinchDistance) return;
       const scale = clamp(pinchStart.current.scale * (distance / pinchStart.current.dist), 0.1, 3);
 
       if (!rect) {
@@ -155,6 +167,7 @@ export function usePanZoom(bounds: Bounds) {
 
   return {
     containerRef,
+    centerOn,
     fitToView,
     handlers: {
       onPointerDown,
