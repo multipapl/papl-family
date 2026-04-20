@@ -33,7 +33,19 @@ export async function saveTreeSnapshot(snapshot: TreeSnapshot, token?: string) {
   });
 
   if (!response.ok) {
-    throw new Error(response.status === 401 ? "Нет доступа к редактированию." : "Не удалось сохранить дерево.");
+    if (response.status === 401) {
+      throw new Error("Нет доступа к редактированию.");
+    }
+
+    if (response.status === 409) {
+      throw new Error("Дерево уже изменилось в другом окне. Обновите страницу перед сохранением.");
+    }
+
+    if (response.status === 413) {
+      throw new Error("Данные дерева слишком большие для сохранения.");
+    }
+
+    throw new Error("Не удалось сохранить дерево.");
   }
 
   return readTreeSnapshotResponse(response, "Сервер не подтвердил сохранение дерева.");

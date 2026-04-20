@@ -641,6 +641,7 @@ export default function FamilyTree() {
       {editingPerson ? (
         <EditSidebar
           key={editingPerson.id}
+          editToken={edit.token}
           indexes={indexes}
           onClose={() => setEditingPerson(null)}
           onDelete={deletePerson}

@@ -6,33 +6,48 @@ import path from "node:path";
 import seed from "@/data/seed.json";
 import { isTreeSnapshot, serializeSnapshot } from "@/domain/treeQueries";
 import type { TreeSnapshot } from "@/domain/types";
+import { isEditAuthorized, isKvConfigured } from "@/lib/serverAuth";
 
 const snapshotKey = "family-tree:snapshot";
 const backupsKey = "family-tree:backups";
 const localDataPath = path.join(process.cwd(), ".local", "tree-snapshot.json");
+const maximumTreeBodyBytes = 1024 * 1024;
 
-function isKvConfigured() {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+async function getLocalSnapshot() {
+  try {
+    const raw = await readFile(localDataPath, "utf8");
+    const saved = JSON.parse(raw);
+    if (isTreeSnapshot(saved)) return serializeSnapshot(saved);
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function getStoredSnapshot() {
+  if (!isKvConfigured()) return getLocalSnapshot();
+
+  const saved = await kv.get<TreeSnapshot>(snapshotKey);
+  return saved && isTreeSnapshot(saved) ? serializeSnapshot(saved) : null;
 }
 
 async function getSnapshot() {
-  if (!isKvConfigured()) {
-    try {
-      const raw = await readFile(localDataPath, "utf8");
-      const saved = JSON.parse(raw);
-      if (isTreeSnapshot(saved)) return serializeSnapshot(saved);
-    } catch {
-      return serializeSnapshot(seed as TreeSnapshot);
-    }
+  const saved = await getStoredSnapshot();
+  if (saved) return saved;
 
-    return serializeSnapshot(seed as TreeSnapshot);
-  }
-
-  const saved = await kv.get<TreeSnapshot>(snapshotKey);
-  if (saved && isTreeSnapshot(saved)) return serializeSnapshot(saved);
+  if (!isKvConfigured()) return serializeSnapshot(seed as TreeSnapshot);
 
   await kv.set(snapshotKey, seed);
   return serializeSnapshot(seed as TreeSnapshot);
+}
+
+function isBodyTooLarge(request: NextRequest) {
+  const contentLength = request.headers.get("content-length");
+  if (!contentLength) return false;
+
+  const size = Number(contentLength);
+  return Number.isFinite(size) && size > maximumTreeBodyBytes;
 }
 
 export async function GET() {
@@ -41,23 +56,39 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const secret = process.env.EDIT_SECRET || (!isKvConfigured() ? "dev" : "");
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.replace(/^Bearer\s+/i, "").trim();
-
-  if (!secret || token !== secret) {
+  if (!isEditAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = await request.json();
+  if (isBodyTooLarge(request)) {
+    return NextResponse.json({ error: "Tree snapshot is too large" }, { status: 413 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   if (!isTreeSnapshot(payload)) {
     return NextResponse.json({ error: "Invalid tree snapshot" }, { status: 400 });
   }
 
   const nextSnapshot = serializeSnapshot(payload);
+  const previous = await getStoredSnapshot();
+
+  if (previous && nextSnapshot.version <= previous.version) {
+    return NextResponse.json(
+      {
+        error: "Tree snapshot has changed. Reload before saving again.",
+        latestVersion: previous.version,
+      },
+      { status: 409 },
+    );
+  }
 
   if (isKvConfigured()) {
-    const previous = await kv.get<TreeSnapshot>(snapshotKey);
     if (previous) {
       const backup = {
         savedAt: new Date().toISOString(),

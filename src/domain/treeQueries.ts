@@ -16,10 +16,94 @@ export function isTreeSnapshot(value: unknown): value is TreeSnapshot {
 
   return (
     typeof candidate.version === "number" &&
+    Number.isFinite(candidate.version) &&
     Array.isArray(candidate.branches) &&
+    candidate.branches.every(isBranch) &&
     Array.isArray(candidate.people) &&
+    candidate.people.every(isPerson) &&
     Array.isArray(candidate.unions) &&
-    Array.isArray(candidate.parentChildRelations)
+    candidate.unions.every(isUnion) &&
+    Array.isArray(candidate.parentChildRelations) &&
+    candidate.parentChildRelations.every(isParentChildRelation) &&
+    (candidate.canvas === undefined || isCanvas(candidate.canvas))
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function isOptionalString(value: unknown) {
+  return value === undefined || typeof value === "string";
+}
+
+function isStringArray(value: unknown) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isBranch(value: unknown): value is Branch {
+  if (!isRecord(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.color === "string" &&
+    isStringArray(value.surnames)
+  );
+}
+
+function isPerson(value: unknown): value is Person {
+  if (!isRecord(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    typeof value.givenName === "string" &&
+    isOptionalString(value.surname) &&
+    isOptionalString(value.maidenName) &&
+    (value.gender === undefined || value.gender === "male" || value.gender === "female") &&
+    isOptionalString(value.birthDate) &&
+    isOptionalString(value.deathDate) &&
+    (value.isDeceased === undefined || typeof value.isDeceased === "boolean") &&
+    isOptionalString(value.note) &&
+    isOptionalString(value.photoUrl) &&
+    isOptionalString(value.branchId) &&
+    isOptionalString(value.primaryUnionId)
+  );
+}
+
+function isUnion(value: unknown): value is Union {
+  if (!isRecord(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    isStringArray(value.partnerIds) &&
+    (value.status === undefined || value.status === "married" || value.status === "divorced")
+  );
+}
+
+function isParentChildRelation(value: unknown): value is TreeSnapshot["parentChildRelations"][number] {
+  if (!isRecord(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    typeof value.unionId === "string" &&
+    typeof value.childId === "string"
+  );
+}
+
+function isCanvas(value: unknown): value is TreeSnapshot["canvas"] {
+  if (!isRecord(value) || !isRecord(value.people)) return false;
+
+  return (
+    Object.values(value.people).every((position) => (
+      isRecord(position) &&
+      typeof position.x === "number" &&
+      Number.isFinite(position.x) &&
+      typeof position.y === "number" &&
+      Number.isFinite(position.y)
+    )) &&
+    (value.collapsedAncestorPersonIds === undefined || isStringArray(value.collapsedAncestorPersonIds)) &&
+    (value.collapsedPersonIds === undefined || isStringArray(value.collapsedPersonIds))
   );
 }
 

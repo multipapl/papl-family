@@ -62,7 +62,6 @@ function personTooltipLines(person: Person, indexes: TreeIndexes) {
   if (parents.length > 0) lines.push(`Родители: ${parents.join(", ")}`);
   if (partners.length > 0) lines.push(`Партнеры: ${partners.join(", ")}`);
   if (person.note) lines.push(`Заметка: ${person.note}`);
-  if (person.photoUrl) lines.push(`Фото: ${person.photoUrl}`);
 
   return lines;
 }

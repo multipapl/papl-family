@@ -1,94 +1,95 @@
 # Family Canvas
 
-## Назначение
+## Purpose
 
-Family Canvas — ручной редактор семейного дерева. Он работает как простая темная Miro-доска, но заточен под семейные связи: карточки людей, партнерства, дети, братья и сестры, ветви семьи и свернутые поддеревья.
+Family Canvas is a manual family tree editor. It behaves like a simple dark Miro board, but it is tailored for family relationships: person cards, partnerships, children, siblings, family branches, collapsed subtrees, and manual positioning.
 
-Текущий подход: пользователь заполняет дерево вручную. GEDCOM-импорт, автоматическая раскладка и старые JSON-данные больше не являются частью актуального продукта.
+The current approach is intentionally manual. GEDCOM import, automatic layout, and old prefilled JSON data are not part of the active product.
 
-## Основной сценарий
+## Main Workflow
 
-1. Открыть приложение.
-2. Войти в режим редактирования через `?edit=...`.
-3. Добавить первого человека.
-4. Через `+` на карточке добавлять родственников.
-5. Перетаскивать карточки вручную на canvas.
-6. Заполнять данные в боковой панели редактирования.
-7. При необходимости создавать свои ветви и фильтровать дерево по ним.
-8. После локальной доработки деплоить на Vercel и заполнять финальные данные уже в продакшене.
+1. Open the app.
+2. Enter edit mode with `?edit=...`.
+3. Add the first person.
+4. Use the `+` button on a card to add relatives.
+5. Drag cards manually on the canvas.
+6. Fill person data in the edit sidebar.
+7. Create custom branches when needed and filter the tree by branch.
+8. After local verification, deploy to Vercel and continue filling the final tree in production.
 
-## UI и UX
+## UI And UX
 
-- Интерфейс полностью на русском языке.
-- Тема темная, спокойная, без светлого полотна.
-- Canvas визуально чистый, без видимой сетки.
-- Для аккуратного выравнивания используется невидимая сетка `20px`.
-- Canvas можно панорамировать и масштабировать.
-- Карточки можно двигать только в режиме редактирования.
-- Кнопка `+` на карточке открывает меню добавления родственников.
-- Кнопка с карандашом открывает редактирование человека.
-- Значок над карточкой сворачивает или разворачивает поддерево потомков.
-- Верхний фильтр ветвей оформлен как dropdown.
-- Дефолтных ветвей нет: пользователь создает ветви сам.
+- The product UI is intentionally Russian because it is used by the family.
+- The theme is dark and calm, with no light canvas.
+- The canvas stays visually clean and has no visible grid.
+- A hidden `20px` grid keeps manual positioning tidy.
+- The canvas supports pan and zoom.
+- Cards can be moved only in edit mode.
+- The card `+` button opens the relative creation menu.
+- The pencil button opens person editing.
+- Collapse controls show when ancestors or descendants are hidden.
+- The branch filter is a dropdown.
+- There are no default branches: users create branches themselves.
 
-## Данные человека
+## Person Data
 
-Карточка человека хранит:
+A person card stores:
 
-- `givenName` — имя;
-- `surname` — фамилия;
-- `maidenName` — девичья фамилия;
-- `gender` — пол;
-- `birthDate` — дата рождения;
-- `deathDate` — дата смерти;
-- `isDeceased` — умер/умерла;
-- `note` — заметка;
-- `photoUrl` — ссылка на фото;
-- `branchId` — выбранная ветвь;
-- `primaryUnionId` — основной партнерский союз.
+- `givenName`: first name;
+- `surname`: surname;
+- `maidenName`: maiden name;
+- `gender`: gender;
+- `birthDate`: birth date;
+- `deathDate`: death date;
+- `isDeceased`: deceased flag;
+- `note`: free-form note;
+- `photoUrl`: public photo URL;
+- `branchId`: selected branch;
+- `primaryUnionId`: preferred partner union.
 
-Даты сохраняются в формате:
+Dates are stored in one of these formats:
 
 - `YYYY`
 - `YYYY-MM`
 - `YYYY-MM-DD`
 
-## Модель дерева
+## Tree Model
 
-Данные хранятся как `TreeSnapshot`:
+Data is stored as a `TreeSnapshot`:
 
-- `branches` — пользовательские ветви;
-- `people` — люди;
-- `unions` — партнерства;
-- `parentChildRelations` — связи ребенок-союз;
-- `canvas.people` — ручные координаты карточек;
-- `canvas.collapsedPersonIds` — свернутые поддеревья.
+- `branches`: custom family branches;
+- `people`: people;
+- `unions`: partnerships;
+- `parentChildRelations`: child-to-union links;
+- `canvas.people`: manual card coordinates;
+- `canvas.collapsedPersonIds`: collapsed descendant subtrees;
+- `canvas.collapsedAncestorPersonIds`: collapsed ancestor subtrees.
 
-Ребенок привязан к союзу, а не к одному родителю. Это позволяет корректно поддерживать пары, одного родителя, несколько партнерств и детей от разных союзов.
+A child is attached to a union, not to a single parent. This supports couples, single parents, multiple partnerships, and children from different unions.
 
-## Локальное хранение
+## Local Storage
 
-Локально данные сохраняются не в `localStorage`, а через API в файл:
+Local data is not stored in `localStorage`. It is saved through the app API into:
 
 ```text
 .local/tree-snapshot.json
 ```
 
-Файл `.local/tree-snapshot.json` игнорируется git и не попадает в коммит.
+This file is ignored by git and should not be committed.
 
-Для локального редактирования используется адрес:
+Open local edit mode with:
 
 ```text
 http://localhost:3000/?edit=dev
 ```
 
-Если Vercel KV не настроен, локальный API принимает секрет `dev`.
+When Vercel KV is not configured, the local API accepts the secret `dev`.
 
-## Production-хранение
+## Production Storage
 
-На Vercel данные должны храниться в Vercel KV.
+Production tree data should live in Vercel KV.
 
-Нужные переменные окружения:
+Required environment variables:
 
 ```text
 KV_REST_API_URL
@@ -96,20 +97,41 @@ KV_REST_API_TOKEN
 EDIT_SECRET
 ```
 
-Когда KV настроен, API использует:
+When KV is configured, the API uses:
 
-- `family-tree:snapshot` — актуальный снимок дерева;
-- `family-tree:backups` — последние резервные копии перед сохранением.
+- `family-tree:snapshot`: the latest tree snapshot;
+- `family-tree:backups`: the last backups created before saves.
 
-Вход в режим редактирования на продакшене:
+Open production edit mode with:
 
 ```text
 https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET
 ```
 
-## Перенос локальных данных на Vercel
+## Photo Storage
 
-Если дерево было частично заполнено локально, его можно отправить на продакшен:
+Person photos are stored in Vercel Blob, while `TreeSnapshot` stores only each person's `photoUrl`.
+
+Required Vercel Blob environment variable:
+
+```text
+BLOB_READ_WRITE_TOKEN
+```
+
+The upload flow is:
+
+1. The browser receives a selected image from the user.
+2. The browser crops the image to a square avatar.
+3. The browser compresses it to a small WebP/JPEG file.
+4. The optimized file uploads directly to Vercel Blob through a client upload token.
+5. The returned Blob URL is written into the person draft.
+6. The user saves the person to persist `photoUrl` in the tree snapshot.
+
+The upload token route is `/api/photos/upload`. It requires the edit token and limits uploaded optimized files to `512 KB`.
+
+## Migrating Local Data To Vercel
+
+If the tree was partially filled locally, post the local snapshot to production:
 
 ```powershell
 curl.exe -X POST "https://your-site.vercel.app/api/tree" `
@@ -118,37 +140,41 @@ curl.exe -X POST "https://your-site.vercel.app/api/tree" `
   --data-binary "@.local/tree-snapshot.json"
 ```
 
-После этого Vercel будет отдавать данные из KV.
+After that, Vercel will serve the tree data from KV.
 
-## Структура актуального кода
+## Current Code Structure
 
 ```text
-src/app/api/tree/route.ts        API чтения и сохранения дерева
-src/components/FamilyTree.tsx    верхний компонент редактора
-src/components/canvas/           canvas, карточки, связи
-src/components/ui/               панели, dropdown ветвей, детали человека
-src/domain/types.ts              типы доменной модели
-src/domain/treeQueries.ts        индексы и helper-функции
-src/hooks/usePanZoom.ts          pan/zoom canvas
-src/hooks/useEditMode.ts         режим редактирования
-src/hooks/useTreeData.ts         загрузка и сохранение snapshot
-src/layout/familyLayout.ts       ручные координаты и fallback-позиции
-src/persistence/api.ts           клиентские API-вызовы
-src/data/seed.json               пустой стартовый snapshot
+src/app/api/tree/route.ts           tree read/write API
+src/app/api/photos/upload/route.ts  Vercel Blob client upload token API
+src/components/FamilyTree.tsx       top-level tree editor component
+src/components/canvas/              canvas, cards, and connectors
+src/components/ui/                  sidebars, branch dropdowns, person details
+src/domain/types.ts                 domain model types
+src/domain/treeQueries.ts           indexes and query helpers
+src/hooks/usePanZoom.ts             canvas pan/zoom state
+src/hooks/useEditMode.ts            edit mode state and token handling
+src/hooks/useTreeData.ts            snapshot loading and saving
+src/layout/familyLayout.ts          manual coordinates and fallback positions
+src/lib/photoOptimizer.ts           client-side avatar compression
+src/persistence/api.ts              tree API client calls
+src/persistence/photos.ts           photo upload client calls
+src/data/seed.json                  empty starter snapshot
 ```
 
-## Команды
+## Commands
 
 ```bash
 npm run dev
 npm run lint
+npm test
 npm run build
 ```
 
-## Что не является актуальным
+## Out Of Scope
 
-- GEDCOM-импорт.
-- Автоматическая раскладка поколений.
-- `localStorage` как хранилище.
-- Предзаполненные семейные ветви.
-- Дефолтные данные семьи в репозитории.
+- GEDCOM import.
+- Automatic generational layout.
+- `localStorage` as the storage backend.
+- Prefilled family branches.
+- Default family data in the repository.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type RefObject, useMemo, useRef, useState } from "react";
 
 import {
   findMatchingBranch,
@@ -16,8 +16,11 @@ import {
   splitDate,
 } from "@/domain/dateValidation";
 import type { Branch, Person, TreeIndexes, TreeSnapshot, UnionStatus } from "@/domain/types";
+import { formatBytes } from "@/lib/photoOptimizer";
+import { uploadPersonPhoto, type UploadedPersonPhoto } from "@/persistence/photos";
 
 type Props = {
+  editToken?: string;
   indexes: TreeIndexes;
   onClose: () => void;
   onDelete: (personId: string) => void;
@@ -27,10 +30,15 @@ type Props = {
   snapshot: TreeSnapshot;
 };
 
-export default function EditSidebar({ indexes, onClose, onDelete, onSave, onSaveUnionStatus, person, snapshot }: Props) {
+export default function EditSidebar({ editToken, indexes, onClose, onDelete, onSave, onSaveUnionStatus, person, snapshot }: Props) {
   const [draft, setDraft] = useState<Person | null>(person);
   const [birth, setBirth] = useState<DateParts>(splitDate(person?.birthDate));
   const [death, setDeath] = useState<DateParts>(splitDate(person?.deathDate));
+  const [photoError, setPhotoError] = useState("");
+  const [photoProgress, setPhotoProgress] = useState(0);
+  const [photoStatus, setPhotoStatus] = useState<"idle" | "optimizing" | "uploading">("idle");
+  const [uploadedPhoto, setUploadedPhoto] = useState<UploadedPersonPhoto | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const unions = useMemo(() => {
     if (!draft) return [];
@@ -48,6 +56,34 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, onSave
 
   function update(patch: Partial<Person>) {
     setDraft((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  async function uploadPhotoFile(file: File) {
+    if (!draft) return;
+
+    setPhotoError("");
+    setUploadedPhoto(null);
+    setPhotoProgress(0);
+    setPhotoStatus("optimizing");
+
+    try {
+      const result = await uploadPersonPhoto({
+        editToken,
+        file,
+        onProgress: (percentage) => {
+          setPhotoStatus("uploading");
+          setPhotoProgress(Math.round(percentage));
+        },
+        personId: draft.id,
+      });
+
+      update({ photoUrl: result.url });
+      setUploadedPhoto(result);
+      setPhotoStatus("idle");
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Не удалось загрузить фото.");
+      setPhotoStatus("idle");
+    }
   }
 
   function save() {
@@ -120,10 +156,27 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, onSave
           <textarea value={draft.note ?? ""} onChange={(event) => update({ note: event.target.value })} className="mt-1 min-h-24 w-full rounded-lg border app-border px-3 py-2" />
         </label>
 
-        <label className="block">
-          <span className="text-sm font-semibold app-text">Фото</span>
-          <input value={draft.photoUrl ?? ""} onChange={(event) => update({ photoUrl: event.target.value })} className="mt-1 w-full rounded-lg border app-border px-3 py-2" />
-        </label>
+        <PhotoField
+          error={photoError}
+          inputRef={photoInputRef}
+          isBusy={photoStatus !== "idle"}
+          person={draft}
+          progress={photoProgress}
+          status={photoStatus}
+          uploadedPhoto={uploadedPhoto}
+          onChooseFile={(file) => void uploadPhotoFile(file)}
+          onManualUrl={(photoUrl) => {
+            setUploadedPhoto(null);
+            setPhotoError("");
+            update({ photoUrl });
+          }}
+          onPick={() => photoInputRef.current?.click()}
+          onRemove={() => {
+            setUploadedPhoto(null);
+            setPhotoError("");
+            update({ photoUrl: undefined });
+          }}
+        />
 
         <label className="block">
           <span className="text-sm font-semibold app-text">Ветвь</span>
@@ -181,6 +234,114 @@ export default function EditSidebar({ indexes, onClose, onDelete, onSave, onSave
         </div>
       </div>
     </aside>
+  );
+}
+
+function PhotoField({
+  error,
+  inputRef,
+  isBusy,
+  onChooseFile,
+  onManualUrl,
+  onPick,
+  onRemove,
+  person,
+  progress,
+  status,
+  uploadedPhoto,
+}: {
+  error: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  isBusy: boolean;
+  onChooseFile: (file: File) => void;
+  onManualUrl: (photoUrl: string | undefined) => void;
+  onPick: () => void;
+  onRemove: () => void;
+  person: Person;
+  progress: number;
+  status: "idle" | "optimizing" | "uploading";
+  uploadedPhoto: UploadedPersonPhoto | null;
+}) {
+  const photoUrl = person.photoUrl ?? "";
+  const statusText =
+    status === "optimizing"
+      ? "Сжимаем фото..."
+      : status === "uploading"
+        ? `Загружаем ${progress}%`
+        : "";
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold app-text">Фото</h3>
+        {photoUrl ? (
+          <button type="button" onClick={onRemove} className="text-sm font-semibold app-danger-text">
+            Убрать
+          </button>
+        ) : null}
+      </div>
+
+      <div className="flex items-center gap-4 rounded-lg border app-border app-panel-soft p-3">
+        <button
+          type="button"
+          disabled={isBusy}
+          onClick={onPick}
+          className="relative grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-dashed border-cyan-300/60 app-panel text-center text-xs font-bold app-text disabled:cursor-wait disabled:opacity-70"
+          title="Выбрать фото"
+        >
+          {photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={photoUrl} alt={getPersonName(person)} className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <span className="px-3 leading-tight">Добавить фото</span>
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onPick}
+            className="w-full rounded-lg app-inverse-bg px-4 py-3 text-sm font-bold app-inverse-text disabled:cursor-wait disabled:opacity-70"
+          >
+            {photoUrl ? "Заменить фото" : "Загрузить фото"}
+          </button>
+          <p className="mt-2 text-xs leading-snug app-muted">
+            На телефоне откроется камера или галерея. Фото автоматически обрежется в квадрат и сильно сожмется перед загрузкой.
+          </p>
+          {statusText ? <p className="mt-2 text-sm font-bold app-success-text">{statusText}</p> : null}
+          {uploadedPhoto ? (
+            <div className="mt-2 text-xs app-success-text">
+              <p>Готово: {formatBytes(uploadedPhoto.optimized.originalBytes)} → {formatBytes(uploadedPhoto.optimized.sizeBytes)}</p>
+              <p className="font-semibold">Нажмите «Сохранить», чтобы записать фото в дерево.</p>
+            </div>
+          ) : null}
+          {error ? <p className="mt-2 text-sm font-semibold app-danger-text">{error}</p> : null}
+        </div>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) onChooseFile(file);
+        }}
+      />
+
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs font-semibold app-muted">Вставить ссылку вручную</summary>
+        <input
+          value={photoUrl}
+          onChange={(event) => onManualUrl(event.target.value.trim() || undefined)}
+          className="mt-2 w-full rounded-lg border app-border px-3 py-2"
+          placeholder="https://..."
+        />
+      </details>
+    </section>
   );
 }
 

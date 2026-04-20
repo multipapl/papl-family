@@ -25,6 +25,32 @@ describe("isTreeSnapshot", () => {
       version: 1,
     })).toBe(false);
   });
+
+  it("rejects malformed items inside snapshot arrays", () => {
+    expect(isTreeSnapshot({
+      branches: [],
+      parentChildRelations: [],
+      people: [{ id: "person_without_name" }],
+      unions: [],
+      version: 1,
+    })).toBe(false);
+
+    expect(isTreeSnapshot({
+      branches: [],
+      parentChildRelations: [],
+      people: [{ gender: "unknown", givenName: "Person", id: "person" }],
+      unions: [],
+      version: 1,
+    })).toBe(false);
+
+    expect(isTreeSnapshot({
+      branches: [],
+      parentChildRelations: [],
+      people: [],
+      unions: [{ id: "union", partnerIds: [123] }],
+      version: 1,
+    })).toBe(false);
+  });
 });
 
 describe("generation indexing", () => {
