@@ -7,13 +7,13 @@ const allowedContentTypes = ["image/jpeg", "image/png", "image/webp"];
 const maximumSizeInBytes = 512 * 1024;
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as HandleUploadBody;
-
-  if (body.type === "blob.generate-client-token" && !isEditAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    const body = (await request.json()) as HandleUploadBody;
+
+    if (body.type === "blob.generate-client-token" && !isEditAuthorized(request)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const response = await handleUpload({
       body,
       request,
@@ -28,7 +28,6 @@ export async function POST(request: NextRequest) {
           maximumSizeInBytes,
         };
       },
-      onUploadCompleted: async () => undefined,
     });
 
     return NextResponse.json(response);
