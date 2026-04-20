@@ -60,6 +60,15 @@ async function getClientUploadToken(pathname: string, editToken?: string) {
   return payload.clientToken;
 }
 
+function isManagedPhotoUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.endsWith(".blob.vercel-storage.com") && url.pathname.startsWith("/people/");
+  } catch {
+    return false;
+  }
+}
+
 export async function uploadPersonPhoto({
   editToken,
   file,
@@ -80,4 +89,22 @@ export async function uploadPersonPhoto({
     optimized,
     url: uploaded.url,
   };
+}
+
+export async function deletePersonPhotos(photoUrls: Array<string | undefined>, editToken?: string) {
+  const urls = [...new Set(photoUrls.filter((url): url is string => Boolean(url && isManagedPhotoUrl(url))))];
+  if (urls.length === 0) return;
+
+  const response = await fetch("/api/photos/delete", {
+    method: "POST",
+    headers: {
+      "Authorization": editToken ? `Bearer ${editToken}` : "",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ urls }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Не удалось удалить старое фото из Blob.");
+  }
 }

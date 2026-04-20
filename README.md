@@ -77,6 +77,7 @@ The editor uploads person photos through Vercel Blob client uploads:
 - the browser compresses it to a small WebP/JPEG before upload;
 - the optimized file is uploaded directly to Vercel Blob;
 - the tree snapshot stores only the resulting `photoUrl`.
+- when a saved person photo is replaced or removed, the old managed Blob photo is deleted.
 
 The server route at `/api/photos/upload` requires the same edit token used for editing.
 

@@ -134,8 +134,9 @@ The upload flow is:
 4. The optimized file uploads directly to Vercel Blob through a client upload token.
 5. The returned Blob URL is written into the person draft.
 6. The user saves the person to persist `photoUrl` in the tree snapshot.
+7. If the saved person had a previous managed Blob photo, the old Blob is deleted after the tree save succeeds.
 
-The upload token route is `/api/photos/upload`. It requires the edit token and limits uploaded optimized files to `512 KB`.
+The upload token route is `/api/photos/upload`. The cleanup route is `/api/photos/delete`. Both require the edit token; uploads are limited to `512 KB`.
 
 ## Vercel Deployment Setup
 

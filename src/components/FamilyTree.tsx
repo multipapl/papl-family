@@ -19,6 +19,7 @@ import type { Person, RelativeKind, TreeIndexes, TreeSnapshot, UnionStatus } fro
 import { useEditMode } from "@/hooks/useEditMode";
 import { useTreeData } from "@/hooks/useTreeData";
 import { computeLayout, markOtherUnionChildren } from "@/layout/familyLayout";
+import { deletePersonPhotos } from "@/persistence/photos";
 
 const invisibleGridSize = 20;
 const rowSize = 240;
@@ -290,8 +291,19 @@ export default function FamilyTree() {
   async function persist(nextSnapshot: TreeSnapshot) {
     treeData.setSnapshot(nextSnapshot);
     if (edit.isEditMode) {
-      await treeData.save(nextSnapshot, edit.token).catch(() => undefined);
+      try {
+        await treeData.save(nextSnapshot, edit.token);
+      } catch {
+        return false;
+      }
     }
+
+    return true;
+  }
+
+  async function deleteManagedPhotos(photoUrls: Array<string | undefined>) {
+    if (!edit.isEditMode) return;
+    await deletePersonPhotos(photoUrls, edit.token).catch(() => undefined);
   }
 
   function queueSave(nextSnapshot: TreeSnapshot) {
@@ -322,6 +334,7 @@ export default function FamilyTree() {
 
   async function savePerson(nextPerson: Person) {
     if (!treeData.snapshot) return;
+    const previousPhotoUrl = treeData.snapshot.people.find((person) => person.id === nextPerson.id)?.photoUrl;
     const next = cloneSnapshot(treeData.snapshot);
     const index = next.people.findIndex((person) => person.id === nextPerson.id);
     if (index >= 0) next.people[index] = nextPerson;
@@ -335,7 +348,11 @@ export default function FamilyTree() {
     }
     pruneDanglingPrimaryUnionIds(next);
 
-    await persist(applyAutoBranch(next));
+    const saved = await persist(applyAutoBranch(next));
+    if (saved && previousPhotoUrl && previousPhotoUrl !== nextPerson.photoUrl) {
+      await deleteManagedPhotos([previousPhotoUrl]);
+    }
+
     setEditingPerson(null);
   }
 
@@ -369,7 +386,9 @@ export default function FamilyTree() {
     canvas.collapsedAncestorPersonIds = (canvas.collapsedAncestorPersonIds ?? []).filter((id) => id !== personId);
     canvas.collapsedPersonIds = (canvas.collapsedPersonIds ?? []).filter((id) => id !== personId);
 
-    await persist(next);
+    const saved = await persist(next);
+    if (saved) await deleteManagedPhotos([person?.photoUrl]);
+
     setEditingPerson(null);
     setAddMenuPerson((current) => (current?.id === personId ? null : current));
     if (selectedPersonId === personId) setSelectedPersonId("");
@@ -393,6 +412,9 @@ export default function FamilyTree() {
         : `Удалить выбранных людей из дерева? (${ids.size})`;
 
     if (!window.confirm(question)) return;
+    const deletedPhotoUrls = treeData.snapshot.people
+      .filter((person) => ids.has(person.id))
+      .map((person) => person.photoUrl);
 
     const next = cloneSnapshot(treeData.snapshot);
     const canvas = ensureCanvas(next);
@@ -411,7 +433,8 @@ export default function FamilyTree() {
     canvas.collapsedAncestorPersonIds = (canvas.collapsedAncestorPersonIds ?? []).filter((id) => !ids.has(id));
     canvas.collapsedPersonIds = (canvas.collapsedPersonIds ?? []).filter((id) => !ids.has(id));
 
-    await persist(next);
+    const saved = await persist(next);
+    if (saved) await deleteManagedPhotos(deletedPhotoUrls);
 
     setEditingPerson((current) => (current && ids.has(current.id) ? null : current));
     setAddMenuPerson((current) => (current && ids.has(current.id) ? null : current));

@@ -17,7 +17,7 @@ import {
 } from "@/domain/dateValidation";
 import type { Branch, Person, TreeIndexes, TreeSnapshot, UnionStatus } from "@/domain/types";
 import { formatBytes } from "@/lib/photoOptimizer";
-import { uploadPersonPhoto, type UploadedPersonPhoto } from "@/persistence/photos";
+import { deletePersonPhotos, uploadPersonPhoto, type UploadedPersonPhoto } from "@/persistence/photos";
 
 type Props = {
   editToken?: string;
@@ -58,8 +58,16 @@ export default function EditSidebar({ editToken, indexes, onClose, onDelete, onS
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }
 
+  function deleteUnsavedDraftPhoto(photoUrl?: string) {
+    const targetUrl = photoUrl ?? draft?.photoUrl;
+    if (targetUrl && targetUrl !== person?.photoUrl) {
+      void deletePersonPhotos([targetUrl], editToken).catch(() => undefined);
+    }
+  }
+
   async function uploadPhotoFile(file: File) {
     if (!draft) return;
+    const previousDraftPhotoUrl = draft.photoUrl;
 
     setPhotoError("");
     setUploadedPhoto(null);
@@ -78,6 +86,7 @@ export default function EditSidebar({ editToken, indexes, onClose, onDelete, onS
       });
 
       update({ photoUrl: result.url });
+      deleteUnsavedDraftPhoto(previousDraftPhotoUrl);
       setUploadedPhoto(result);
       setPhotoStatus("idle");
     } catch (error) {
@@ -166,12 +175,14 @@ export default function EditSidebar({ editToken, indexes, onClose, onDelete, onS
           uploadedPhoto={uploadedPhoto}
           onChooseFile={(file) => void uploadPhotoFile(file)}
           onManualUrl={(photoUrl) => {
+            deleteUnsavedDraftPhoto();
             setUploadedPhoto(null);
             setPhotoError("");
             update({ photoUrl });
           }}
           onPick={() => photoInputRef.current?.click()}
           onRemove={() => {
+            deleteUnsavedDraftPhoto();
             setUploadedPhoto(null);
             setPhotoError("");
             update({ photoUrl: undefined });
