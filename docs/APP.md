@@ -83,21 +83,23 @@ Open local edit mode with:
 http://localhost:3000/?edit=dev
 ```
 
-When Vercel KV is not configured, the local API accepts the secret `dev`.
+When Redis is not configured locally, the local API accepts the secret `dev`.
 
 ## Production Storage
 
-Production tree data should live in Vercel KV.
+Production tree data should live in Upstash Redis through the Vercel Marketplace.
 
 Required environment variables:
 
 ```text
-KV_REST_API_URL
-KV_REST_API_TOKEN
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
 EDIT_SECRET
 ```
 
-When KV is configured, the API uses:
+The server also accepts the legacy `KV_REST_API_URL` and `KV_REST_API_TOKEN` names for migrated Vercel KV stores.
+
+When Redis is configured, the API uses:
 
 - `family-tree:snapshot`: the latest tree snapshot;
 - `family-tree:backups`: the last backups created before saves.
@@ -140,7 +142,7 @@ curl.exe -X POST "https://your-site.vercel.app/api/tree" `
   --data-binary "@.local/tree-snapshot.json"
 ```
 
-After that, Vercel will serve the tree data from KV.
+After that, Vercel will serve the tree data from Redis.
 
 ## Current Code Structure
 
@@ -157,6 +159,7 @@ src/hooks/useEditMode.ts            edit mode state and token handling
 src/hooks/useTreeData.ts            snapshot loading and saving
 src/layout/familyLayout.ts          manual coordinates and fallback positions
 src/lib/photoOptimizer.ts           client-side avatar compression
+src/lib/redis.ts                    Upstash Redis client
 src/persistence/api.ts              tree API client calls
 src/persistence/photos.ts           photo upload client calls
 src/data/seed.json                  empty starter snapshot

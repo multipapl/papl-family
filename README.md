@@ -19,7 +19,7 @@ Open edit mode locally:
 http://localhost:3000/?edit=dev
 ```
 
-When Vercel KV is not configured, local changes are stored in:
+When Redis is not configured locally, changes are stored in:
 
 ```text
 .local/tree-snapshot.json
@@ -29,15 +29,17 @@ This file is ignored by git.
 
 ## Production
 
-Production tree data is stored in Vercel KV.
+Production tree data is stored in Upstash Redis through the Vercel Marketplace.
 
 Required environment variables:
 
 ```text
-KV_REST_API_URL
-KV_REST_API_TOKEN
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
 EDIT_SECRET
 ```
+
+The server also accepts the legacy `KV_REST_API_URL` and `KV_REST_API_TOKEN` names for migrated Vercel KV stores.
 
 Person photos are stored in Vercel Blob. Create a Blob store for the Vercel project so the deployment receives:
 

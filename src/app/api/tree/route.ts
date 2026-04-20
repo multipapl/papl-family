@@ -1,4 +1,3 @@
-import { kv } from "@vercel/kv";
 import { NextRequest, NextResponse } from "next/server";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -6,12 +5,15 @@ import path from "node:path";
 import seed from "@/data/seed.json";
 import { isTreeSnapshot, serializeSnapshot } from "@/domain/treeQueries";
 import type { TreeSnapshot } from "@/domain/types";
-import { canUseLocalStorageFallback, getEditAuthError, isKvConfigured } from "@/lib/serverAuth";
+import { getRedisClient } from "@/lib/redis";
+import { canUseLocalStorageFallback, getEditAuthError, getRedisConfig } from "@/lib/serverAuth";
 
 const snapshotKey = "family-tree:snapshot";
 const backupsKey = "family-tree:backups";
 const localDataPath = path.join(process.cwd(), ".local", "tree-snapshot.json");
 const maximumTreeBodyBytes = 1024 * 1024;
+const missingRedisConfigError =
+  "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are not configured.";
 
 async function getLocalSnapshot() {
   try {
@@ -26,9 +28,10 @@ async function getLocalSnapshot() {
 }
 
 async function getStoredSnapshot() {
-  if (!isKvConfigured()) return canUseLocalStorageFallback() ? getLocalSnapshot() : null;
+  const redis = getRedisClient();
+  if (!redis) return canUseLocalStorageFallback() ? getLocalSnapshot() : null;
 
-  const saved = await kv.get<TreeSnapshot>(snapshotKey);
+  const saved = await redis.get<TreeSnapshot>(snapshotKey);
   return saved && isTreeSnapshot(saved) ? serializeSnapshot(saved) : null;
 }
 
@@ -36,9 +39,10 @@ async function getSnapshot() {
   const saved = await getStoredSnapshot();
   if (saved) return saved;
 
-  if (!isKvConfigured()) return serializeSnapshot(seed as TreeSnapshot);
+  const redis = getRedisClient();
+  if (!redis) return serializeSnapshot(seed as TreeSnapshot);
 
-  await kv.set(snapshotKey, seed);
+  await redis.set(snapshotKey, seed);
   return serializeSnapshot(seed as TreeSnapshot);
 }
 
@@ -51,9 +55,9 @@ function isBodyTooLarge(request: NextRequest) {
 }
 
 export async function GET() {
-  if (!isKvConfigured() && !canUseLocalStorageFallback()) {
+  if (!getRedisConfig() && !canUseLocalStorageFallback()) {
     return NextResponse.json(
-      { error: "KV_REST_API_URL and KV_REST_API_TOKEN are not configured." },
+      { error: missingRedisConfigError },
       { status: 503 },
     );
   }
@@ -71,9 +75,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!isKvConfigured() && !canUseLocalStorageFallback()) {
+  const redis = getRedisClient();
+  if (!redis && !canUseLocalStorageFallback()) {
     return NextResponse.json(
-      { error: "KV_REST_API_URL and KV_REST_API_TOKEN are not configured." },
+      { error: missingRedisConfigError },
       { status: 503 },
     );
   }
@@ -106,17 +111,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (isKvConfigured()) {
+  if (redis) {
     if (previous) {
       const backup = {
         savedAt: new Date().toISOString(),
         snapshot: previous,
       };
-      await kv.lpush(backupsKey, JSON.stringify(backup));
-      await kv.ltrim(backupsKey, 0, 9);
+      await redis.lpush(backupsKey, JSON.stringify(backup));
+      await redis.ltrim(backupsKey, 0, 9);
     }
 
-    await kv.set(snapshotKey, nextSnapshot);
+    await redis.set(snapshotKey, nextSnapshot);
   } else {
     await mkdir(path.dirname(localDataPath), { recursive: true });
     await writeFile(localDataPath, `${JSON.stringify(nextSnapshot, null, 2)}\n`, "utf8");

@@ -1,11 +1,14 @@
 import type { NextRequest } from "next/server";
 
-export function isKvConfigured() {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+export function getRedisConfig() {
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+  return url && token ? { token, url } : null;
 }
 
 export function canUseLocalStorageFallback() {
-  return process.env.NODE_ENV !== "production" && !isKvConfigured();
+  return process.env.NODE_ENV !== "production" && !getRedisConfig();
 }
 
 export function getEditSecret() {
