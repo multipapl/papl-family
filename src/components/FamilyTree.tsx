@@ -315,6 +315,25 @@ export default function FamilyTree() {
     queueSave(treeData.snapshot);
   }
 
+  function exportCurrentSnapshot() {
+    if (!treeData.snapshot || !edit.isEditMode) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `family-tree-snapshot-${timestamp}.json`;
+    const blob = new Blob([`${JSON.stringify(treeData.snapshot, null, 2)}\n`], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function addPersonAt(position: { x: number; y: number }) {
     if (!treeData.snapshot) return;
 
@@ -580,6 +599,14 @@ export default function FamilyTree() {
             </button>
             <button type="button" onClick={() => edit.setIsEditMode(false)} className="rounded-md app-panel px-3 py-1.5 shadow-sm">
               × Выйти
+            </button>
+            <button
+              type="button"
+              onClick={exportCurrentSnapshot}
+              className="rounded-md app-panel px-2 py-1 text-xs font-semibold app-muted shadow-sm"
+              title="Скачать резервную копию дерева"
+            >
+              JSON
             </button>
             {treeData.isSaving ? <span className="app-success-text">Сохраняем...</span> : null}
           </div>

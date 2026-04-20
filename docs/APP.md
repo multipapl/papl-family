@@ -149,6 +149,8 @@ The upload token route is `/api/photos/upload`. The cleanup route is `/api/photo
 
 Both tree saves and photo uploads use the same `EDIT_SECRET` bearer token.
 
+The edit toolbar includes a small `JSON` button. It downloads the current `TreeSnapshot` as a local backup file and does not modify production data.
+
 ## Migrating Local Data To Vercel
 
 If the tree was partially filled locally, post the local snapshot to production:

@@ -69,6 +69,8 @@ https://your-site.vercel.app/?edit=YOUR_EDIT_SECRET
 
 Saving the tree and uploading photos both require the same edit token.
 
+The edit toolbar includes a small `JSON` button for downloading the current tree snapshot as a local backup.
+
 ## Image Uploads
 
 The editor uploads person photos through Vercel Blob client uploads:
