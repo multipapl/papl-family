@@ -21,7 +21,7 @@ import { useTreeData } from "@/hooks/useTreeData";
 import { computeLayout, markOtherUnionChildren } from "@/layout/familyLayout";
 
 const invisibleGridSize = 20;
-const rowSize = 200;
+const rowSize = 240;
 const defaultPersonPosition = { x: 720, y: 420 };
 
 function snapToInvisibleGrid(x: number, y: number) {
@@ -92,13 +92,13 @@ function getFocusAncestorLineIds(indexes: TreeIndexes, personId: string) {
 }
 
 function getRelativePosition(kind: RelativeKind, anchorPosition: { x: number; y: number }) {
-  if (kind === "father") return { x: anchorPosition.x - 120, y: anchorPosition.y - rowSize };
-  if (kind === "mother") return { x: anchorPosition.x + 120, y: anchorPosition.y - rowSize };
-  if (kind === "partner") return { x: anchorPosition.x + 240, y: anchorPosition.y };
-  if (kind === "brother") return { x: anchorPosition.x - 240, y: anchorPosition.y };
-  if (kind === "sister") return { x: anchorPosition.x + 240, y: anchorPosition.y };
-  if (kind === "son") return { x: anchorPosition.x - 120, y: anchorPosition.y + rowSize };
-  return { x: anchorPosition.x + 120, y: anchorPosition.y + rowSize };
+  if (kind === "father") return { x: anchorPosition.x - 144, y: anchorPosition.y - rowSize };
+  if (kind === "mother") return { x: anchorPosition.x + 144, y: anchorPosition.y - rowSize };
+  if (kind === "partner") return { x: anchorPosition.x + 288, y: anchorPosition.y };
+  if (kind === "brother") return { x: anchorPosition.x - 288, y: anchorPosition.y };
+  if (kind === "sister") return { x: anchorPosition.x + 288, y: anchorPosition.y };
+  if (kind === "son") return { x: anchorPosition.x - 144, y: anchorPosition.y + rowSize };
+  return { x: anchorPosition.x + 144, y: anchorPosition.y + rowSize };
 }
 
 function getRelativeDraftName(kind: RelativeKind) {
@@ -271,16 +271,18 @@ export default function FamilyTree() {
   const dimmedIds = useMemo(() => {
     if (!indexes) return new Set<string>();
 
-    // Selection focus overrides branch dimming: keep selected person + all ancestors.
-    if (selectedPersonId) {
+    if (selectedBranchId) {
+      const readable = getReadableBranchIds(indexes, selectedBranchId);
+      return new Set([...visibleIds].filter((id) => !readable.has(id)));
+    }
+
+    if (selectedPersonId && !edit.isEditMode) {
       const focusIds = getFocusAncestorLineIds(indexes, selectedPersonId);
       return new Set([...visibleIds].filter((id) => !focusIds.has(id)));
     }
 
-    if (!selectedBranchId) return new Set<string>();
-    const readable = getReadableBranchIds(indexes, selectedBranchId);
-    return new Set([...visibleIds].filter((id) => !readable.has(id)));
-  }, [indexes, selectedBranchId, selectedPersonId, visibleIds]);
+    return new Set<string>();
+  }, [edit.isEditMode, indexes, selectedBranchId, selectedPersonId, visibleIds]);
 
   const selectedPerson = selectedPersonId && indexes ? indexes.personById.get(selectedPersonId) ?? null : null;
   const selectedLayoutNode = selectedPersonId && layout ? layout.people.get(selectedPersonId) : undefined;
@@ -506,7 +508,7 @@ export default function FamilyTree() {
 
   if (treeData.errorMessage && !treeData.snapshot) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f3ec] px-6 text-center text-rose-800">
+      <main className="grid min-h-screen place-items-center app-bg px-6 text-center app-danger-text">
         {treeData.errorMessage}
       </main>
     );
@@ -514,33 +516,33 @@ export default function FamilyTree() {
 
   if (treeData.isLoading || !treeData.snapshot || !indexes || !layout) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f3ec] px-6 text-center">
+      <main className="grid min-h-screen place-items-center app-bg px-6 text-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-950">Семейное дерево</h1>
-          <p className="mt-2 text-slate-600">Загружаем...</p>
+          <h1 className="text-3xl font-bold app-text">Семейное дерево</h1>
+          <p className="mt-2 app-muted">Загружаем...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="relative h-dvh w-screen overflow-hidden bg-[#f7f3ec] text-slate-950">
+    <main className="relative h-dvh w-screen overflow-hidden app-bg app-text">
       <div className="absolute left-3 right-3 top-3 z-30 flex flex-col gap-2 md:right-auto md:w-[760px]">
         <BranchFilter branches={treeData.snapshot.branches} value={selectedBranchId} onChange={setSelectedBranchId} />
         {edit.isEditMode ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border app-border app-success-panel px-3 py-2 text-sm font-bold app-success-text shadow-sm">
             <span>Режим редактирования</span>
-            <button type="button" onClick={() => void addPersonAt(defaultPersonPosition)} className="rounded-md bg-white px-3 py-1.5 shadow-sm">
+            <button type="button" onClick={() => void addPersonAt(defaultPersonPosition)} className="rounded-md app-panel px-3 py-1.5 shadow-sm">
               + Человек
             </button>
-            <button type="button" onClick={() => setShowBranches(true)} className="rounded-md bg-white px-3 py-1.5 shadow-sm">
+            <button type="button" onClick={() => setShowBranches(true)} className="rounded-md app-panel px-3 py-1.5 shadow-sm">
               Ветви
             </button>
             <button
               type="button"
               disabled={treeData.isSaving || selectedPersonIds.size === 0}
               onClick={() => void deleteSelectedPeople()}
-              className="rounded-md bg-rose-50 px-3 py-1.5 text-rose-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md app-danger-panel px-3 py-1.5 app-danger-text shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
               title="Удалить выбранные карточки"
             >
               Удалить
@@ -549,14 +551,14 @@ export default function FamilyTree() {
               type="button"
               disabled={treeData.isSaving}
               onClick={saveCurrentSnapshot}
-              className="rounded-md bg-slate-950 px-3 py-1.5 text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="rounded-md app-inverse-bg px-3 py-1.5 app-inverse-text shadow-sm disabled:cursor-not-allowed disabled:app-disabled-bg"
             >
               Сохранить
             </button>
-            <button type="button" onClick={() => edit.setIsEditMode(false)} className="rounded-md bg-white px-3 py-1.5 shadow-sm">
+            <button type="button" onClick={() => edit.setIsEditMode(false)} className="rounded-md app-panel px-3 py-1.5 shadow-sm">
               × Выйти
             </button>
-            {treeData.isSaving ? <span className="text-emerald-700">Сохраняем...</span> : null}
+            {treeData.isSaving ? <span className="app-success-text">Сохраняем...</span> : null}
           </div>
         ) : null}
       </div>
@@ -596,16 +598,16 @@ export default function FamilyTree() {
 
       {layout.people.size === 0 ? (
         <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center px-6 text-center">
-          <div className="pointer-events-auto rounded-xl border border-stone-200 bg-white px-5 py-4 shadow-xl">
-            <h1 className="text-2xl font-bold text-slate-950">Семейное дерево пустое</h1>
-            <p className="mt-2 max-w-sm text-sm text-slate-600">
+          <div className="pointer-events-auto rounded-xl border app-border app-panel px-5 py-4 shadow-xl">
+            <h1 className="text-2xl font-bold app-text">Семейное дерево пустое</h1>
+            <p className="mt-2 max-w-sm text-sm app-muted">
               Войдите в режим редактирования и добавьте первого человека.
             </p>
             {edit.isEditMode ? (
               <button
                 type="button"
                 onClick={() => void addPersonAt(defaultPersonPosition)}
-                className="mt-4 rounded-lg bg-slate-950 px-4 py-3 font-bold text-white"
+                className="mt-4 rounded-lg app-inverse-bg px-4 py-3 font-bold app-inverse-text"
               >
                 Добавить первого человека
               </button>
@@ -617,7 +619,7 @@ export default function FamilyTree() {
       <button
         type="button"
         onClick={edit.toggleHiddenEdit}
-        className="absolute bottom-3 right-3 z-50 grid h-11 w-11 place-items-center rounded-full bg-white/90 text-xl font-bold text-slate-500 shadow transition active:scale-95 active:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+        className="absolute bottom-3 right-3 z-50 grid h-11 w-11 place-items-center rounded-full app-panel text-xl font-bold app-muted shadow transition active:scale-95 active:app-panel-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         title="Редактирование"
       >
         ⋯
@@ -629,10 +631,10 @@ export default function FamilyTree() {
             event.preventDefault();
             edit.enterWithToken(secretValue);
           }}
-          className="absolute bottom-16 right-3 z-50 flex gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-xl"
+          className="absolute bottom-16 right-3 z-50 flex gap-2 rounded-lg border app-border app-panel p-2 shadow-xl"
         >
-          <input value={secretValue} onChange={(event) => setSecretValue(event.target.value)} className="w-44 rounded-md border border-stone-300 px-3 py-2" />
-          <button type="submit" className="rounded-md bg-slate-950 px-3 py-2 font-bold text-white">OK</button>
+          <input value={secretValue} onChange={(event) => setSecretValue(event.target.value)} className="w-44 rounded-md border app-border px-3 py-2" />
+          <button type="submit" className="rounded-md app-inverse-bg px-3 py-2 font-bold app-inverse-text">OK</button>
         </form>
       ) : null}
 

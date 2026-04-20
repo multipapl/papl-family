@@ -352,13 +352,6 @@ export function getReadableBranchIds(indexes: TreeIndexes, selectedBranchId: str
     if (assignedToBranch || matchesBranchName) ids.add(person.id);
   }
 
-  const baseIds = [...ids];
-  for (const id of baseIds) {
-    for (const partnerId of indexes.partnerIdsByPersonId.get(id) ?? []) ids.add(partnerId);
-    for (const parentId of indexes.parentIdsByChildId.get(id) ?? []) ids.add(parentId);
-    for (const childId of indexes.childrenByPersonId.get(id) ?? []) ids.add(childId);
-  }
-
   return ids;
 }
 

@@ -30,13 +30,14 @@ export type LayoutResult = {
   height: number;
 };
 
-export const CARD_WIDTH = 192;
-export const CARD_HEIGHT = 124;
+export const CARD_WIDTH = 230;
+export const CARD_HEIGHT = 149;
+export const CARD_BODY_HEIGHT = 101;
 
 const FALLBACK_COLUMNS = 6;
-const FALLBACK_X_GAP = 240;
-const FALLBACK_Y_GAP = 200;
-const PADDING = 260;
+const FALLBACK_X_GAP = 288;
+const FALLBACK_Y_GAP = 240;
+const PADDING = 312;
 
 export function computeLayout(snapshot: TreeSnapshot, indexes: TreeIndexes, visibleIds: Set<string>): LayoutResult {
   const people = snapshot.people.filter((person) => visibleIds.has(person.id));
@@ -82,7 +83,7 @@ export function computeLayout(snapshot: TreeSnapshot, indexes: TreeIndexes, visi
         : average(childNodes.map((node) => node.x));
     const y =
       partnerNodes.length > 0
-        ? average(partnerNodes.map((node) => node.y)) + CARD_HEIGHT / 2 + 28
+        ? average(partnerNodes.map((node) => node.y - CARD_HEIGHT / 2 + CARD_BODY_HEIGHT)) + 28
         : average(childNodes.map((node) => node.y)) - CARD_HEIGHT / 2 - 70;
 
     unionNodes.set(union.id, {

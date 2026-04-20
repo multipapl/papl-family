@@ -28,75 +28,73 @@ body {
   height: 100%;
 }
 
-/* Legacy theme adapter for existing Tailwind utility markup. Prefer semantic variables for new UI. */
-.bg-\[\#f7f3ec\] {
-  background-color: var(--background) !important;
+.app-bg {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
-.bg-white,
-.bg-white\/90 {
-  background-color: color-mix(in srgb, var(--panel) 92%, transparent) !important;
+.app-panel {
+  background-color: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--foreground);
 }
 
-.bg-stone-50,
-.bg-stone-100 {
-  background-color: var(--panel-soft) !important;
+.app-panel-soft,
+.hover\:app-panel-soft:hover,
+.active\:app-panel-soft:active {
+  background-color: var(--panel-soft);
 }
 
-.bg-emerald-50 {
-  background-color: #172c25 !important;
+.app-success-panel {
+  background-color: #172c25;
 }
 
-.bg-rose-50 {
-  background-color: #2c1a20 !important;
+.app-danger-panel {
+  background-color: #2c1a20;
 }
 
-.bg-amber-200 {
-  background-color: #4c3821 !important;
+.app-warning-panel {
+  background-color: #4c3821;
 }
 
-.bg-slate-900,
-.bg-slate-950 {
-  background-color: #d7e7df !important;
+.app-inverse-bg {
+  background-color: #d7e7df;
+  color: #101413;
 }
 
-.text-slate-950,
-.text-slate-900,
-.text-slate-800,
-.text-slate-700 {
-  color: var(--foreground) !important;
+.disabled\:app-disabled-bg:disabled {
+  background-color: #76827c;
 }
 
-.text-slate-600,
-.text-slate-500,
-.text-stone-500,
-.text-stone-400 {
-  color: var(--muted) !important;
+.app-overlay {
+  background-color: color-mix(in srgb, var(--background) 75%, transparent);
 }
 
-.text-white {
-  color: #101413 !important;
+.app-text {
+  color: var(--foreground);
 }
 
-.text-emerald-900,
-.text-emerald-800,
-.text-emerald-700 {
-  color: #bfe7d4 !important;
+.app-muted {
+  color: var(--muted);
 }
 
-.text-rose-800 {
-  color: var(--danger) !important;
+.app-inverse-text {
+  color: #101413;
 }
 
-.text-amber-900,
-.text-amber-800 {
-  color: #f0c27a !important;
+.app-success-text {
+  color: #bfe7d4;
 }
 
-.border-stone-200,
-.border-stone-300,
-.border-emerald-200 {
-  border-color: var(--line) !important;
+.app-danger-text {
+  color: var(--danger);
+}
+
+.app-warning-text {
+  color: #f0c27a;
+}
+
+.app-border {
+  border-color: var(--line);
 }
 
 input,

@@ -1,25 +1,38 @@
-import type { PersonLayoutNode, LayoutResult } from "@/layout/familyLayout";
+import { CARD_BODY_HEIGHT, type PersonLayoutNode, type LayoutResult } from "@/layout/familyLayout";
 
 type Props = {
   dimmedIds: Set<string>;
   layout: LayoutResult;
 };
 
-function edgeOpacity(ids: string[], dimmedIds: Set<string>) {
-  return ids.some((id) => dimmedIds.has(id)) ? 0.12 : 0.72;
+const activeEdgeOpacity = 0.72;
+const mutedEdgeOpacity = 0.2;
+
+function isMutedEdge(ids: string[], dimmedIds: Set<string>) {
+  return ids.length > 0 && ids.every((id) => dimmedIds.has(id));
+}
+
+function edgeStyle(ids: string[], stroke: string, dimmedIds: Set<string>, strokeWidth = 2) {
+  const muted = isMutedEdge(ids, dimmedIds);
+
+  return {
+    stroke,
+    strokeOpacity: muted ? mutedEdgeOpacity : activeEdgeOpacity,
+    strokeWidth,
+  };
 }
 
 function childPath(unionX: number, unionY: number, child: PersonLayoutNode) {
-  const childTop = child.y - child.height / 2;
-  const middleY = unionY + (childTop - unionY) * 0.52;
+  const childAnchorY = child.y - child.height / 2;
+  const middleY = Math.min(childAnchorY - 42, unionY + (childAnchorY - unionY) * 0.42);
   const dx = child.x - unionX;
 
   if (Math.abs(dx) < 4) {
-    return `M ${unionX} ${unionY} L ${child.x} ${childTop}`;
+    return `M ${unionX} ${unionY} L ${child.x} ${childAnchorY}`;
   }
 
   const sign = dx > 0 ? 1 : -1;
-  const radius = Math.min(18, Math.abs(dx) / 2, Math.abs(childTop - unionY) / 2);
+  const radius = Math.min(27, Math.abs(dx) / 2, Math.abs(childAnchorY - unionY) / 2);
 
   return [
     `M ${unionX} ${unionY}`,
@@ -27,8 +40,12 @@ function childPath(unionX: number, unionY: number, child: PersonLayoutNode) {
     `Q ${unionX} ${middleY} ${unionX + sign * radius} ${middleY}`,
     `L ${child.x - sign * radius} ${middleY}`,
     `Q ${child.x} ${middleY} ${child.x} ${middleY + radius}`,
-    `L ${child.x} ${childTop}`,
+    `L ${child.x} ${childAnchorY}`,
   ].join(" ");
+}
+
+function cardCenterY(node: PersonLayoutNode) {
+  return node.y - node.height / 2 + CARD_BODY_HEIGHT / 2;
 }
 
 function heartPath(cx: number, cy: number, size: number) {
@@ -87,21 +104,23 @@ export default function UnionConnector({ dimmedIds, layout }: Props) {
         if (union.hasHiddenPartners && partners.length === 0) return null;
         if (partners.length === 0 && children.length === 0) return null;
 
-        const ids = [...union.partnerIds, ...union.childIds];
-        const opacity = edgeOpacity(ids, dimmedIds);
         const sortedPartners = [...partners].sort((left, right) => left.x - right.x);
         const firstPartner = sortedPartners[0];
         const lastPartner = sortedPartners[sortedPartners.length - 1];
         const showPartnerLine = firstPartner && lastPartner && firstPartner.id !== lastPartner.id;
         const partnerLineY =
           sortedPartners.length > 0
-            ? sortedPartners.reduce((sum, partner) => sum + partner.y, 0) / sortedPartners.length
+            ? sortedPartners.reduce((sum, partner) => sum + cardCenterY(partner), 0) / sortedPartners.length
             : union.y;
         const isDivorced = union.status === "divorced";
         const familyStroke = partnerStroke(sortedPartners) ?? descendantStroke(children) ?? "#65746f";
+        const partnerIds = sortedPartners.map((partner) => partner.id);
+        const sourceIds = partnerIds.length > 0 ? partnerIds : children.map((child) => child.id);
+        const sourceEdgeStyle = edgeStyle(sourceIds, familyStroke, dimmedIds);
+        const heartOpacity = isMutedEdge(sourceIds, dimmedIds) ? mutedEdgeOpacity : activeEdgeOpacity;
 
         return (
-          <g key={union.id} opacity={opacity}>
+          <g key={union.id}>
             {showPartnerLine ? (
               <>
                 <line
@@ -109,8 +128,7 @@ export default function UnionConnector({ dimmedIds, layout }: Props) {
                   x2={lastPartner.x - lastPartner.width / 2}
                   y1={partnerLineY}
                   y2={partnerLineY}
-                  stroke={familyStroke}
-                  strokeWidth="2"
+                  {...edgeStyle(partnerIds, familyStroke, dimmedIds)}
                 />
                 {children.length > 0 ? (
                   <line
@@ -118,18 +136,20 @@ export default function UnionConnector({ dimmedIds, layout }: Props) {
                     x2={union.x}
                     y1={partnerLineY}
                     y2={union.y}
-                    stroke={familyStroke}
                     strokeLinecap="round"
-                    strokeWidth="2"
+                    {...sourceEdgeStyle}
                   />
                 ) : null}
                 {isDivorced ? (
-                  <BrokenHeart cx={union.x} cy={partnerLineY} />
+                  <g opacity={heartOpacity}>
+                    <BrokenHeart cx={union.x} cy={partnerLineY} />
+                  </g>
                 ) : (
                   <path
                     d={heartPath(union.x, partnerLineY, 12)}
                     fill="#d96a82"
                     stroke="#f5c6d0"
+                    opacity={heartOpacity}
                     strokeLinejoin="round"
                     strokeWidth="1.5"
                   />
@@ -141,24 +161,23 @@ export default function UnionConnector({ dimmedIds, layout }: Props) {
               <path
                 d={`M ${Math.min(...children.map((child) => child.x))} ${union.y} L ${Math.max(...children.map((child) => child.x))} ${union.y}`}
                 fill="none"
-                stroke={descendantStroke(children) ?? "#65746f"}
-                strokeWidth="2"
+                {...edgeStyle(children.map((child) => child.id), descendantStroke(children) ?? "#65746f", dimmedIds)}
               />
             ) : null}
 
             {children.map((child) => {
               const stroke = child.fromOtherUnion ? "#d6a44c" : familyStroke;
+              const strokeWidth = child.fromOtherUnion ? 2.4 : 2;
 
               return (
                 <path
                   key={`${union.id}_${child.id}`}
                   d={childPath(union.x, union.y, child)}
                   fill="none"
-                  stroke={stroke}
                   strokeDasharray={child.fromOtherUnion ? "5 4" : undefined}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth={child.fromOtherUnion ? "2.4" : "2"}
+                  {...edgeStyle(sourceIds, stroke, dimmedIds, strokeWidth)}
                 />
               );
             })}

@@ -40,7 +40,7 @@ export default function BranchFilter({ branches, onChange, value }: Props) {
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white px-3 text-left text-sm font-semibold shadow-[0_14px_34px_rgba(0,0,0,0.22)]"
+        className="flex h-11 w-full items-center justify-between gap-3 rounded-lg border app-border app-panel px-3 text-left text-sm font-semibold shadow-[0_14px_34px_rgba(0,0,0,0.22)]"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span
@@ -49,17 +49,17 @@ export default function BranchFilter({ branches, onChange, value }: Props) {
           />
           <span className="truncate">{label}</span>
         </span>
-        <span className="text-xs text-slate-500">{isOpen ? "▲" : "▼"}</span>
+        <span className="text-xs app-muted">{isOpen ? "▲" : "▼"}</span>
       </button>
 
       {isOpen ? (
-        <div className="absolute left-0 top-12 z-50 w-full overflow-hidden rounded-lg border border-stone-200 bg-white p-1 shadow-[0_22px_54px_rgba(0,0,0,0.36)]">
+        <div className="absolute left-0 top-12 z-50 w-full overflow-hidden rounded-lg border app-border app-panel p-1 shadow-[0_22px_54px_rgba(0,0,0,0.36)]">
           <button
             type="button"
             onClick={() => choose("")}
             className={[
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold",
-              value === "" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-stone-100",
+              value === "" ? "app-inverse-bg app-inverse-text" : "app-muted hover:app-panel-soft",
             ].join(" ")}
           >
             <span className="h-3 w-3 rounded-full bg-cyan-300" />
@@ -67,7 +67,7 @@ export default function BranchFilter({ branches, onChange, value }: Props) {
           </button>
 
           {branches.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-slate-500">Ветви еще не созданы</div>
+            <div className="px-3 py-3 text-sm app-muted">Ветви еще не созданы</div>
           ) : (
             branches.map((branch) => (
               <button
@@ -76,7 +76,7 @@ export default function BranchFilter({ branches, onChange, value }: Props) {
                 onClick={() => choose(branch.id)}
                 className={[
                   "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold",
-                  value === branch.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-stone-100",
+                  value === branch.id ? "app-inverse-bg app-inverse-text" : "app-muted hover:app-panel-soft",
                 ].join(" ")}
               >
                 <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: branch.color }} />

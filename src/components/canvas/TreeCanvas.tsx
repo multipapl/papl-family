@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Person, RelativeKind, TreeIndexes, TreeSnapshot } from "@/domain/types";
 import { formatLifeDates, getParents, getPartners, getPersonName } from "@/domain/treeQueries";
 import { usePanZoom } from "@/hooks/usePanZoom";
-import { CARD_HEIGHT, type LayoutResult } from "@/layout/familyLayout";
+import { CARD_BODY_HEIGHT, type LayoutResult } from "@/layout/familyLayout";
 
+import GenderSilhouette, { genderColor } from "./GenderSilhouette";
 import PersonCard from "./PersonCard";
 import UnionConnector from "./UnionConnector";
 
@@ -64,6 +65,40 @@ function personTooltipLines(person: Person, indexes: TreeIndexes) {
   if (person.photoUrl) lines.push(`Фото: ${person.photoUrl}`);
 
   return lines;
+}
+
+function countHiddenAncestors(indexes: TreeIndexes, layout: LayoutResult, personId: string) {
+  const hiddenIds = new Set<string>();
+  const visitedIds = new Set<string>();
+
+  const visit = (id: string) => {
+    for (const parentId of indexes.parentIdsByChildId.get(id) ?? []) {
+      if (visitedIds.has(parentId)) continue;
+      visitedIds.add(parentId);
+      if (!layout.people.has(parentId)) hiddenIds.add(parentId);
+      visit(parentId);
+    }
+  };
+
+  visit(personId);
+  return hiddenIds.size;
+}
+
+function countHiddenDescendants(indexes: TreeIndexes, layout: LayoutResult, personId: string) {
+  const hiddenIds = new Set<string>();
+  const visitedIds = new Set<string>();
+
+  const visit = (id: string) => {
+    for (const childId of indexes.childrenByPersonId.get(id) ?? []) {
+      if (visitedIds.has(childId)) continue;
+      visitedIds.add(childId);
+      if (!layout.people.has(childId)) hiddenIds.add(childId);
+      visit(childId);
+    }
+  };
+
+  visit(personId);
+  return hiddenIds.size;
 }
 
 export default function TreeCanvas({
@@ -312,7 +347,7 @@ export default function TreeCanvas({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 cursor-grab touch-none overflow-hidden bg-[#f7f3ec] active:cursor-grabbing"
+      className="absolute inset-0 cursor-grab touch-none overflow-hidden app-bg active:cursor-grabbing"
       onDoubleClick={addOnDoubleClick}
       onPointerCancel={finishBoxSelection}
       onPointerDown={startBoxSelection}
@@ -328,7 +363,7 @@ export default function TreeCanvas({
         data-canvas-control="true"
         onClick={fitToView}
         onPointerDown={(event) => event.stopPropagation()}
-        className="absolute right-3 top-3 z-20 grid h-11 w-11 place-items-center rounded-full border border-stone-200 bg-white text-lg font-bold text-slate-700 shadow transition active:scale-95 active:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+        className="absolute right-3 top-3 z-20 grid h-11 w-11 place-items-center rounded-full border app-border app-panel text-lg font-bold app-text shadow transition active:scale-95 active:app-panel-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         title="Показать все дерево"
       >
         ⌖
@@ -400,6 +435,7 @@ export default function TreeCanvas({
                   <CollapseToggle
                     collapsed={collapsedAncestorIds.has(person.id) || hasHiddenParents}
                     direction="up"
+                    hiddenCount={countHiddenAncestors(indexes, layout, person.id)}
                     onToggle={() => onToggleAncestorCollapse(person.id)}
                   />
                 ) : null;
@@ -408,6 +444,7 @@ export default function TreeCanvas({
                 <CollapseToggle
                   collapsed={collapsedIds.has(person.id)}
                   direction="down"
+                  hiddenCount={countHiddenDescendants(indexes, layout, person.id)}
                   onToggle={() => onToggleCollapse(person.id)}
                 />
               ) : null}
@@ -502,7 +539,7 @@ function TreeMinimap({
     <svg
       ref={minimapRef}
       data-canvas-control="true"
-      className="absolute bottom-3 left-3 z-20 h-[110px] w-[160px] rounded border border-stone-200 bg-white/90 p-2 shadow-xl md:h-[150px] md:w-[220px]"
+      className="absolute bottom-3 left-3 z-20 h-[110px] w-[160px] rounded border app-border app-panel p-2 shadow-xl md:h-[150px] md:w-[220px]"
       preserveAspectRatio="xMidYMid meet"
       viewBox={`${layout.minX} ${layout.minY} ${layout.width} ${layout.height}`}
       onPointerDown={(event) => {
@@ -549,16 +586,50 @@ function TreeMinimap({
 function CollapseToggle({
   collapsed,
   direction,
+  hiddenCount,
   onToggle,
 }: {
   collapsed: boolean;
   direction: "down" | "up";
+  hiddenCount: number;
   onToggle: () => void;
 }) {
   const title =
     direction === "up"
       ? collapsed ? "Развернуть предков" : "Свернуть предков"
       : collapsed ? "Развернуть потомков" : "Свернуть потомков";
+
+  if (collapsed) {
+    const label = hiddenCount > 0 ? `${hiddenCount} скрыто` : "скрыто";
+
+    return (
+      <>
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 z-20 w-0.5 -translate-x-1/2 rounded-full bg-cyan-400/75"
+          style={{
+            height: direction === "up" ? 12 : 14,
+            top: direction === "up" ? -12 : CARD_BODY_HEIGHT,
+          }}
+        />
+        <button
+          type="button"
+          data-card-action="true"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle();
+          }}
+          className="absolute left-1/2 z-40 flex h-8 min-w-[96px] -translate-x-1/2 items-center justify-center gap-1.5 rounded-full border border-cyan-300/80 bg-[#111827] px-3 text-[12px] font-black leading-none text-[#f8fafc] shadow-md ring-2 ring-[#62c7d8]/45 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          style={{ top: direction === "up" ? -44 : CARD_BODY_HEIGHT + 14 }}
+          title={title}
+        >
+          <PlusIcon />
+          <span className="whitespace-nowrap">{label}</span>
+        </button>
+      </>
+    );
+  }
 
   return (
     <button
@@ -570,13 +641,12 @@ function CollapseToggle({
         onToggle();
       }}
       className={[
-        "absolute right-[-14px] z-30 grid h-11 w-11 place-items-center rounded-full text-sm font-bold leading-none shadow-sm transition",
-        direction === "up" ? "-top-3" : "",
+        "absolute z-30 grid h-11 w-11 place-items-center rounded-full text-sm font-bold leading-none shadow-sm transition",
         collapsed
           ? "bg-[#f8fafc] text-[#0b1220] text-base font-black opacity-100 ring-2 ring-[#62c7d8]"
           : "bg-[#111827] text-[#f8fafc] opacity-90 ring-1 ring-white/15",
       ].join(" ")}
-      style={direction === "down" ? { top: CARD_HEIGHT - 54 } : undefined}
+      style={{ right: -22, top: direction === "up" ? -22 : CARD_BODY_HEIGHT - 22 }}
       title={title}
     >
       {collapsed ? <PlusIcon /> : <MinusIcon />}
@@ -587,7 +657,7 @@ function CollapseToggle({
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <path d="M7 2.5v9M2.5 7h9" fill="none" stroke="#0b1220" strokeLinecap="round" strokeWidth="2.4" />
+      <path d="M7 2.5v9M2.5 7h9" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
     </svg>
   );
 }
@@ -659,7 +729,7 @@ function AddRelativeMenu({
 
   return (
     <div
-      className="absolute inset-0 z-30 bg-slate-950/10"
+      className="absolute inset-0 z-30 app-overlay"
       data-canvas-control="true"
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -667,7 +737,7 @@ function AddRelativeMenu({
         type="button"
         data-card-action="true"
         onClick={onClose}
-        className="absolute grid h-11 w-11 place-items-center rounded-full bg-slate-900 text-xl font-bold text-white shadow"
+        className="absolute grid h-11 w-11 place-items-center rounded-full app-inverse-bg text-xl font-bold app-inverse-text shadow"
         style={{ left: closeX, top: closeY }}
         title="Закрыть"
       >
@@ -727,11 +797,11 @@ function MenuButton({
       data-card-action="true"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className="absolute flex items-center gap-3 rounded-lg border-2 bg-white px-3 text-left text-base font-bold leading-tight text-slate-950 shadow-xl md:gap-4 md:px-4 md:text-xl"
+      className="absolute flex items-center gap-3 rounded-lg border-2 app-panel px-3 text-left text-base font-bold leading-tight app-text shadow-xl md:gap-4 md:px-4 md:text-xl"
       style={{ borderColor: color, height, left: x, top: y, width }}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-stone-100 text-sm text-stone-500 md:h-14 md:w-14">
-        {tone === "female" ? "Ж" : "М"}
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full app-panel-soft md:h-14 md:w-14" style={{ color: genderColor(tone) }}>
+        <GenderSilhouette gender={tone} />
       </span>
       {label}
     </button>

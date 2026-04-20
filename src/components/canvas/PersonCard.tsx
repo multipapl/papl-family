@@ -2,6 +2,8 @@
 
 import type { Branch, Person } from "@/domain/types";
 import { formatLifeDates, getPersonName } from "@/domain/treeQueries";
+import { CARD_BODY_HEIGHT, CARD_HEIGHT, CARD_WIDTH } from "@/layout/familyLayout";
+import GenderSilhouette, { genderColor } from "./GenderSilhouette";
 
 type Props = {
   branch?: Branch;
@@ -17,12 +19,6 @@ type Props = {
   zoomScale: number;
 };
 
-function genderIcon(person: Person) {
-  if (person.gender === "female") return "Ж";
-  if (person.gender === "male") return "М";
-  return "?";
-}
-
 export default function PersonCard({
   branch,
   dimmed,
@@ -36,42 +32,53 @@ export default function PersonCard({
   tooltipLines,
   zoomScale,
 }: Props) {
-  const borderColor = person.gender === "female" ? "#e66f87" : person.gender === "male" ? "#4bbfd0" : "#72807a";
+  const borderColor = branch?.color ?? "#65746f";
   const dates = formatLifeDates(person);
   const background = branch ? `${branch.color}2b` : "#19211f";
   const detailLevel = Math.max(0, Math.min(1, (zoomScale - 1.05) / 0.95));
-  const nameFontSize = 13 - detailLevel * 1.8;
-  const dateFontSize = 11 - detailLevel * 0.8;
+  const nameFontSize = 15 - detailLevel * 2;
+  const dateFontSize = 13 - detailLevel;
   const nameLineClamp = detailLevel > 0.45 ? 3 : 2;
+  const personName = getPersonName(person);
 
   return (
     <div
       className={[
-        "group relative h-[124px] w-[192px] transition",
+        "group relative transition",
         dimmed ? "opacity-20" : "opacity-100",
       ].join(" ")}
+      style={{ height: CARD_HEIGHT, width: CARD_WIDTH }}
     >
       <button
         type="button"
         onClick={() => onSelect(person)}
         className={[
-          "relative flex h-[84px] w-full items-center gap-3 overflow-hidden rounded border-2 bg-white px-3 text-left shadow-[0_10px_24px_rgba(0,0,0,0.24)] transition-[box-shadow]",
+          "relative z-20 flex w-full items-center gap-4 overflow-hidden rounded-[5px] border-2 app-panel px-4 text-left shadow-[0_10px_24px_rgba(0,0,0,0.24)] transition-[box-shadow]",
           selected ? "ring-4 ring-cyan-500/40" : "hover:shadow-[0_14px_30px_rgba(0,0,0,0.32)]",
         ].join(" ")}
-        style={{ backgroundColor: background, borderColor }}
+        style={{ backgroundColor: background, borderColor, height: CARD_BODY_HEIGHT }}
       >
-        {branch ? (
-          <span
-            className="absolute -left-0.5 -right-0.5 -top-0.5 z-20 h-2 rounded-t"
-            style={{ backgroundColor: branch.color }}
-          />
-        ) : null}
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-stone-200 bg-stone-100 text-sm font-bold text-stone-400">
-          {genderIcon(person)}
+        <span
+          className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border app-border app-panel-soft"
+          style={{ color: genderColor(person.gender) }}
+        >
+          <GenderSilhouette gender={person.gender} />
+          {person.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              alt={personName}
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+              src={person.photoUrl}
+              onError={(event) => {
+                event.currentTarget.hidden = true;
+              }}
+            />
+          ) : null}
         </span>
         <span className="min-w-0 flex-1">
           <span
-            className="block overflow-hidden text-[13px] font-bold leading-tight text-slate-950"
+            className="block overflow-hidden text-[15px] font-bold leading-tight app-text"
             style={{
               display: "-webkit-box",
               WebkitBoxOrient: "vertical",
@@ -80,28 +87,28 @@ export default function PersonCard({
               overflowWrap: "anywhere",
             }}
           >
-            {getPersonName(person)}
+            {personName}
           </span>
-          {dates ? <span className="mt-1 block truncate leading-tight text-slate-600" style={{ fontSize: dateFontSize }}>{dates}</span> : null}
-          {person.note && detailLevel > 0.35 ? <span className="mt-1 block truncate text-[10px] text-slate-500">{person.note}</span> : null}
+          {dates ? <span className="mt-1 block truncate leading-tight app-muted" style={{ fontSize: dateFontSize }}>{dates}</span> : null}
+          {person.note && detailLevel > 0.35 ? <span className="mt-1 block truncate text-[11px] app-muted">{person.note}</span> : null}
         </span>
       </button>
 
       <div
         className={[
-          "pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-[280px] -translate-x-1/2 rounded-md border border-stone-200 bg-white px-3 py-2 text-left text-[12px] leading-snug text-slate-700 shadow-2xl group-focus-within:block group-hover:block",
+          "pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-[280px] -translate-x-1/2 rounded-md border app-border app-panel px-3 py-2 text-left text-[12px] leading-snug app-text shadow-2xl group-focus-within:block group-hover:block",
           selected ? "block" : "hidden",
         ].join(" ")}
       >
         {tooltipLines.map((line, index) => (
-          <div key={`${person.id}_tooltip_${index}`} className={index === 0 ? "font-bold text-slate-950" : ""}>
+          <div key={`${person.id}_tooltip_${index}`} className={index === 0 ? "font-bold app-text" : ""}>
             {line}
           </div>
         ))}
       </div>
 
       {fromOtherUnion ? (
-        <span className="absolute right-2 top-[58px] rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+        <span className="absolute right-3 rounded app-warning-panel px-1.5 py-0.5 text-[11px] font-semibold app-warning-text" style={{ top: CARD_BODY_HEIGHT - 31 }}>
           др.
         </span>
       ) : null}
@@ -116,7 +123,7 @@ export default function PersonCard({
               event.stopPropagation();
               onEdit(person);
             }}
-            className="absolute -left-3 -top-3 z-30 grid h-11 w-11 place-items-center rounded-full border border-stone-200 bg-white text-sm font-bold text-slate-700 shadow-sm transition active:scale-95 active:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+            className="absolute -left-3 -top-3 z-30 grid h-11 w-11 place-items-center rounded-full border app-border app-panel text-sm font-bold app-text shadow-sm transition active:scale-95 active:app-panel-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             title="Редактировать"
           >
             ✎
@@ -129,7 +136,8 @@ export default function PersonCard({
               event.stopPropagation();
               onAddRelative(person);
             }}
-            className="absolute left-1/2 top-[80px] z-20 grid h-11 w-14 -translate-x-1/2 place-items-center rounded-b-md border-x border-b border-stone-200 bg-white text-xl font-bold leading-none text-slate-700 shadow-[0_7px_12px_rgba(15,23,42,0.14)]"
+            className="absolute left-1/2 z-10 grid h-11 w-14 -translate-x-1/2 place-items-center rounded-b-md border-x border-b app-border app-panel text-xl font-bold leading-none app-text shadow-[0_7px_12px_rgba(15,23,42,0.14)]"
+            style={{ top: CARD_BODY_HEIGHT - 2 }}
             title="Добавить родственника"
           >
             +
