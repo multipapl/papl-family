@@ -561,6 +561,11 @@ export default function FamilyTree() {
             {treeData.isSaving ? <span className="app-success-text">Сохраняем...</span> : null}
           </div>
         ) : null}
+        {treeData.errorMessage ? (
+          <div className="rounded-lg border app-border app-danger-panel px-3 py-2 text-sm font-bold app-danger-text shadow-sm">
+            {treeData.errorMessage}
+          </div>
+        ) : null}
       </div>
 
       <TreeCanvas

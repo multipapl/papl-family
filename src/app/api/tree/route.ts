@@ -6,7 +6,7 @@ import path from "node:path";
 import seed from "@/data/seed.json";
 import { isTreeSnapshot, serializeSnapshot } from "@/domain/treeQueries";
 import type { TreeSnapshot } from "@/domain/types";
-import { isEditAuthorized, isKvConfigured } from "@/lib/serverAuth";
+import { canUseLocalStorageFallback, getEditAuthError, isKvConfigured } from "@/lib/serverAuth";
 
 const snapshotKey = "family-tree:snapshot";
 const backupsKey = "family-tree:backups";
@@ -26,7 +26,7 @@ async function getLocalSnapshot() {
 }
 
 async function getStoredSnapshot() {
-  if (!isKvConfigured()) return getLocalSnapshot();
+  if (!isKvConfigured()) return canUseLocalStorageFallback() ? getLocalSnapshot() : null;
 
   const saved = await kv.get<TreeSnapshot>(snapshotKey);
   return saved && isTreeSnapshot(saved) ? serializeSnapshot(saved) : null;
@@ -51,13 +51,31 @@ function isBodyTooLarge(request: NextRequest) {
 }
 
 export async function GET() {
+  if (!isKvConfigured() && !canUseLocalStorageFallback()) {
+    return NextResponse.json(
+      { error: "KV_REST_API_URL and KV_REST_API_TOKEN are not configured." },
+      { status: 503 },
+    );
+  }
+
   const snapshot = await getSnapshot();
   return NextResponse.json(snapshot);
 }
 
 export async function POST(request: NextRequest) {
-  if (!isEditAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authError = getEditAuthError(request);
+  if (authError) {
+    return NextResponse.json(
+      { error: authError },
+      { status: authError.includes("configured") ? 503 : 401 },
+    );
+  }
+
+  if (!isKvConfigured() && !canUseLocalStorageFallback()) {
+    return NextResponse.json(
+      { error: "KV_REST_API_URL and KV_REST_API_TOKEN are not configured." },
+      { status: 503 },
+    );
   }
 
   if (isBodyTooLarge(request)) {

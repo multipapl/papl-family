@@ -13,7 +13,10 @@ export function useEditMode() {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get("edit")?.trim();
-    const storedToken = window.sessionStorage.getItem(tokenKey)?.trim() ?? "";
+    const storedToken =
+      window.localStorage.getItem(tokenKey)?.trim() ||
+      window.sessionStorage.getItem(tokenKey)?.trim() ||
+      "";
 
     function applyToken(nextToken: string, enterEditMode = false) {
       queueMicrotask(() => {
@@ -24,7 +27,7 @@ export function useEditMode() {
     }
 
     if (tokenFromUrl) {
-      window.sessionStorage.setItem(tokenKey, tokenFromUrl);
+      window.localStorage.setItem(tokenKey, tokenFromUrl);
       params.delete("edit");
       const nextSearch = params.toString();
       window.history.replaceState(
@@ -52,6 +55,7 @@ export function useEditMode() {
     if (!cleaned) return;
 
     window.sessionStorage.setItem(tokenKey, cleaned);
+    window.localStorage.setItem(tokenKey, cleaned);
     setToken(cleaned);
     setIsEditMode(true);
     setShowSecretInput(false);
